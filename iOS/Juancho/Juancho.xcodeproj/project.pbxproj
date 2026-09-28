@@ -12,7 +12,6 @@
   A000000000000000000006 = { isa = PBXBuildFile; fileRef = A000000000000000000106; };
   A000000000000000000007 = { isa = PBXBuildFile; fileRef = A000000000000000000107; };
   A000000000000000000008 = { isa = PBXBuildFile; fileRef = A000000000000000000108; };
-  A000000000000000000009 = { isa = PBXBuildFile; fileRef = A000000000000000000109; };
 
   A000000000000000000101 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/JuanchoApp.swift; sourceTree = "<group>"; };
   A000000000000000000102 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Models.swift; sourceTree = "<group>"; };
@@ -22,7 +21,6 @@
   A000000000000000000106 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/JuanchoModel.swift; sourceTree = "<group>"; };
   A000000000000000000107 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ContentView.swift; sourceTree = "<group>"; };
   A000000000000000000108 = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Resources/Info.plist; sourceTree = "<group>"; };
-  A000000000000000000109 = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Resources/Info.plist; sourceTree = "<group>"; };
 
   A000000000000000000201 = { isa = PBXGroup; children = (A000000000000000000101); path = App; sourceTree = "<group>"; };
   A000000000000000000202 = { isa = PBXGroup; children = (A000000000000000000102,A000000000000000000103,A000000000000000000104,A000000000000000000105,A000000000000000000106); path = Core; sourceTree = "<group>"; };
@@ -31,7 +29,7 @@
   A000000000000000000205 = { isa = PBXGroup; children = (A000000000000000000201,A000000000000000000202,A000000000000000000203,A000000000000000000204); sourceTree = "<group>"; };
 
   A000000000000000000301 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A000000000000000000001,A000000000000000000002,A000000000000000000003,A000000000000000000004,A000000000000000000005,A000000000000000000006,A000000000000000000007); runOnlyForDeploymentPostprocessing = 0; };
-  A000000000000000000302 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+  A000000000000000000302 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A000000000000000000008); runOnlyForDeploymentPostprocessing = 0; };
 
   A000000000000000000401 = { isa = PBXNativeTarget; buildConfigurationList = A000000000000000000501; buildPhases = (A000000000000000000301,A000000000000000000302); buildRules = (); dependencies = (); name = Juancho; productName = Juancho; productReference = A000000000000000000601; productType = "com.apple.product-type.application"; };
   A000000000000000000402 = { isa = PBXProject; buildConfigurationList = A000000000000000000502; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; mainGroup = A000000000000000000205; productRefGroup = A000000000000000000205; projectDirPath = ""; projectRoot = ""; targets = (A000000000000000000401); };
