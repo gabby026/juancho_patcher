@@ -5,44 +5,91 @@ struct ApplicationContainer {
     let url: URL
 }
 
-enum TargetAccessError: LocalizedError {
-    case inaccessible(String), notFound(String), unsafePath
+enum TargetAccessError: Error, LocalizedError {
+    case inaccessible(String)
+    case notFound(String)
+    case unsafePath
+
     var errorDescription: String? {
         switch self {
-        case .inaccessible(let s): return "Filesystem access unavailable: \(s)"
-        case .notFound(let s): return "No container found for \(s)."
-        case .unsafePath: return "Unsafe destination path."
+        case .inaccessible(let message):
+            return "Target filesystem is not accessible: \(message)"
+        case .notFound(let id):
+            return "No application container found for \(id)."
+        case .unsafePath:
+            return "Unsafe target path."
         }
     }
 }
 
-enum FilesystemTarget {
-    static let roots = [
-        URL(fileURLWithPath:"/var/mobile/Containers/Data/Application", isDirectory:true),
-        URL(fileURLWithPath:"/private/var/mobile/Containers/Data/Application", isDirectory:true)
+final class FilesystemTarget {
+    static let applicationRoots = [
+        URL(fileURLWithPath: "/var/mobile/Containers/Data/Application", isDirectory: true),
+        URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application", isDirectory: true)
     ]
 
-    static func locate(bundleID: String) throws -> ApplicationContainer {
-        var last: Error?
-        for root in roots {
+    static func locateApplication(bundleID: String) throws -> ApplicationContainer {
+        var lastError: Error?
+
+        for root in applicationRoots {
             do {
-                for child in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys:nil) where child.hasDirectoryPath {
-                    for p in [child.appendingPathComponent("Info.plist"), child.appendingPathComponent("AppInfo.app/Info.plist"), child.appendingPathComponent(".com.apple.mobile_container_manager.metadata.plist")] where FileManager.default.fileExists(atPath:p.path) {
-                        if let d = NSDictionary(contentsOf:p) as? [String:Any],
-                           ((d["CFBundleIdentifier"] as? String) ?? (d["MCMMetadataIdentifier"] as? String)) == bundleID {
-                            return ApplicationContainer(bundleID:bundleID, url:child)
+                let children = try FileManager.default.contentsOfDirectory(
+                    at: root,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: []
+                )
+
+                for child in children {
+                    guard (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+                        continue
+                    }
+
+                    let candidates = [
+                        child.appendingPathComponent(".com.apple.mobile_container_manager.metadata.plist"),
+                        child.appendingPathComponent("AppInfo.app/Info.plist"),
+                        child.appendingPathComponent("Info.plist")
+                    ]
+
+                    for candidate in candidates where FileManager.default.fileExists(atPath: candidate.path) {
+                        guard
+                            let dictionary = NSDictionary(contentsOf: candidate) as? [String: Any],
+                            let found = (dictionary["CFBundleIdentifier"] as? String)
+                                ?? (dictionary["MCMMetadataIdentifier"] as? String),
+                            found == bundleID
+                        else {
+                            continue
                         }
+
+                        return ApplicationContainer(bundleID: bundleID, url: child)
                     }
                 }
-            } catch { last = error }
+            } catch {
+                lastError = error
+            }
         }
-        if let last { throw TargetAccessError.inaccessible(last.localizedDescription) }
+
+        if let lastError {
+            throw TargetAccessError.inaccessible(lastError.localizedDescription)
+        }
         throw TargetAccessError.notFound(bundleID)
     }
 
-    static func destination(container: ApplicationContainer, relativePath: String) throws -> URL {
-        let p = relativePath.replacingOccurrences(of:"\\", with:"/")
-        guard !p.hasPrefix("/"), !p.split(separator:"/").contains(".."), !p.contains(":") else { throw TargetAccessError.unsafePath }
-        return container.url.appendingPathComponent(p)
+    static func destinationURL(
+        container: ApplicationContainer,
+        relativePath: String
+    ) throws -> URL {
+        let normalized = relativePath
+            .replacingOccurrences(of: "\\", with: "/")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+        guard
+            !normalized.isEmpty,
+            !normalized.split(separator: "/").contains(".."),
+            !normalized.contains(":")
+        else {
+            throw TargetAccessError.unsafePath
+        }
+
+        return container.url.appendingPathComponent(normalized, isDirectory: false)
     }
 }
