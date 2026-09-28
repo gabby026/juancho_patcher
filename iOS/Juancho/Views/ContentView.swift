@@ -86,7 +86,11 @@ struct ContentView: View {
                 allowsMultipleSelection: false
             ) { result in
                 switch result {
-                case .success(let url):
+                case .success(let urls):
+                    guard let url = urls.first else {
+                        model.errorMessage = "No package selected."
+                        return
+                    }
                     let lower = url.pathExtension.lowercased()
                     guard lower == "juancho" else {
                         model.errorMessage = "Please select a .juancho package."
