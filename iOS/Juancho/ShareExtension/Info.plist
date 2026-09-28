@@ -13,18 +13,58 @@
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.3</string>
+    <string>0.1.4</string>
     <key>CFBundleVersion</key>
-    <string>4</string>
+    <string>5</string>
+
+    <key>UTImportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.juancho.juancho-package</string>
+            <key>UTTypeDescription</key>
+            <string>Juancho Patch Package</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.item</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>juancho</string>
+                </array>
+                <key>public.mime-type</key>
+                <string>application/x-juancho</string>
+            </dict>
+        </dict>
+    </array>
+
     <key>NSExtension</key>
     <dict>
         <key>NSExtensionAttributes</key>
         <dict>
             <key>NSExtensionActivationRule</key>
-            <dict>
-                <key>NSExtensionActivationSupportsFileWithMaxCount</key>
-                <integer>1</integer>
-            </dict>
+            <string>
+                SUBQUERY(
+                    extensionItems,
+                    $extensionItem,
+                    SUBQUERY(
+                        $extensionItem.attachments,
+                        $attachment,
+                        (
+                            ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.juancho.juancho-package"
+                            OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.data"
+                            OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url"
+                        )
+                    ).@count &gt;= 1
+                ).@count &gt;= 1
+            </string>
+            <key>NSExtensionActivationDictionaryVersion</key>
+            <integer>2</integer>
+            <key>NSExtensionActivationUsesStrictMatching</key>
+            <false/>
         </dict>
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.share-services</string>
