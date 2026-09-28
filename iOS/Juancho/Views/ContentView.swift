@@ -1,6 +1,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+extension UTType {
+    static let juanchoPackage = UTType(exportedAs: "com.juancho.juancho-package", conformingTo: .data)
+}
+
 struct ContentView: View {
     @EnvironmentObject private var model: JuanchoModel
     @State private var importer = false
@@ -26,7 +30,7 @@ struct ContentView: View {
                     if let doc = model.document {
                         LabeledContent("Project", value: doc.header.projectName)
                         LabeledContent("Target", value: doc.header.targetBundleID)
-                        LabeledContent("Files", value: "\(doc.manifest.rules.count)")
+                        LabeledContent("Files", value: "(doc.manifest.rules.count)")
                         LabeledContent("Password", value: doc.header.passwordProtected ? "Yes" : "No")
                     }
 
@@ -40,7 +44,6 @@ struct ContentView: View {
                         ForEach(doc.manifest.rules) { rule in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(rule.replacementFilename)
-                                    .font(.body)
                                 Text(rule.relativePath)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -79,12 +82,16 @@ struct ContentView: View {
             .navigationTitle("Juancho")
             .fileImporter(
                 isPresented: $importer,
-                allowedContentTypes: [
-                    UTType(filenameExtension: "juancho") ?? .data
-                ]
+                allowedContentTypes: [.juanchoPackage, .data],
+                allowsMultipleSelection: false
             ) { result in
                 switch result {
                 case .success(let url):
+                    let lower = url.pathExtension.lowercased()
+                    guard lower == "juancho" else {
+                        model.errorMessage = "Please select a .juancho package."
+                        return
+                    }
                     model.importURL(url)
                 case .failure(let error):
                     model.errorMessage = error.localizedDescription
