@@ -132,6 +132,9 @@ struct ContentView: View {
             .onAppear {
                 model.loadPackages()
             }
+            .onOpenURL { url in
+                model.handleOpenURL(url)
+            }
             .alert(
                 "Juancho",
                 isPresented: Binding(
