@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 import CryptoKit
 
 @MainActor
@@ -17,9 +18,43 @@ final class JuanchoModel: ObservableObject {
 
     let patchStore = PatchStore()
 
+    private let shareHandoffType = "com.juancho.juancho-package"
+
     private var packagesDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return appSupport.appendingPathComponent("JuanchoPackages", isDirectory: true)
+    }
+
+    func handleOpenURL(_ url: URL) {
+        guard url.scheme == "juancho", url.host == "import" else { return }
+
+        guard let data = UIPasteboard.general.data(forPasteboardType: shareHandoffType) else {
+            errorMessage = "No package was received from the Share Sheet."
+            return
+        }
+
+        do {
+            let header = try JuanchoPackageCodec.readHeader(data)
+            try FileManager.default.createDirectory(
+                at: packagesDirectory,
+                withIntermediateDirectories: true
+            )
+
+            let safeName = header.projectName
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "\\", with: "_")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let filename = (safeName.isEmpty ? "JuanchoPackage" : safeName) + ".juancho"
+            let destination = packagesDirectory.appendingPathComponent(filename, isDirectory: false)
+
+            try data.write(to: destination, options: .atomic)
+            loadPackages()
+            importURL(destination)
+            status = "Saved to Juancho — \(filename)"
+        } catch {
+            errorMessage = "Could not save the shared package: \(error.localizedDescription)"
+        }
     }
 
     func loadPackages() {
