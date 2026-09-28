@@ -23,12 +23,18 @@ final class PatchStore: ObservableObject {
         }
 
         var recordEntries: [PatchRecord.Entry] = []
-        var completed: [(dest: URL, backup: Data?, added: Bool)] = []
+        var completed: [(dest: URL, backupData: Data?, added: Bool)] = []
 
         do {
             var usedPayloads = Set<String>()
+
             for rule in document.manifest.rules {
-                let replacement = try replacementData(for: rule, document: document, usedPayloads: &usedPayloads)
+                let replacement = try replacementData(
+                    for: rule,
+                    document: document,
+                    usedPayloads: &usedPayloads
+                )
+
                 let dest = try FilesystemTarget.destinationURL(
                     container: container,
                     relativePath: rule.relativePath
@@ -36,17 +42,19 @@ final class PatchStore: ObservableObject {
 
                 let fm = FileManager.default
                 let existed = fm.fileExists(atPath: dest.path)
-                var backupPath: URL?
-
-                if existed {
-                    let backupData = try Data(contentsOf: dest)
-                    backupPath = try saveBackup(projectKey: projectKey, destination: dest, data: backupData)
+                let backupData = existed ? try Data(contentsOf: dest) : nil
+                let backupPath = try backupData.map {
+                    try saveBackup(projectKey: projectKey, destination: dest, data: $0)
                 }
 
                 try fm.createDirectory(
                     at: dest.deletingLastPathComponent(),
                     withIntermediateDirectories: true
                 )
+
+                // Record rollback information before verification so a failed verification
+                // can always restore/remove the file that was just written.
+                completed.append((dest, backupData, !existed))
                 try replacement.write(to: dest, options: .atomic)
 
                 let written = try Data(contentsOf: dest)
@@ -54,7 +62,6 @@ final class PatchStore: ObservableObject {
                     throw patchError(102, "Hash verification failed after writing \(rule.relativePath).")
                 }
 
-                completed.append((dest, backupPath.flatMap { try? Data(contentsOf: $0) }, !existed))
                 recordEntries.append(
                     .init(
                         destination: rule.relativePath,
@@ -65,11 +72,12 @@ final class PatchStore: ObservableObject {
                 )
             }
         } catch {
+            let fm = FileManager.default
             for item in completed.reversed() {
-                if let backup = item.backup {
+                if let backup = item.backupData {
                     try? backup.write(to: item.dest, options: .atomic)
                 } else if item.added {
-                    try? FileManager.default.removeItem(at: item.dest)
+                    try? fm.removeItem(at: item.dest)
                 }
             }
             throw error
@@ -81,6 +89,7 @@ final class PatchStore: ObservableObject {
             appliedAt: Date(),
             entries: recordEntries
         )
+
         activeRecords[projectKey] = record
         save()
         return "Patched \(recordEntries.count) files."
@@ -94,6 +103,45 @@ final class PatchStore: ObservableObject {
 
         let container = try FilesystemTarget.locateApplication(bundleID: bundleID)
         let fm = FileManager.default
+
+        // Preflight every destination before changing anything. This prevents a partial
+        // restore if the game or another tool has modified a patched file since install.
+        for entry in record.entries {
+            let dest = try FilesystemTarget.destinationURL(
+                container: container,
+                relativePath: entry.destination
+            )
+
+            if entry.addedByPatch {
+                if fm.fileExists(atPath: dest.path) {
+                    let current = try Data(contentsOf: dest)
+                    guard sha256(current) == entry.expectedSHA256 else {
+                        throw patchError(
+                            104,
+                            "Refusing to remove modified file: \(entry.destination)"
+                        )
+                    }
+                }
+            } else {
+                guard let backupPath = entry.backupPath else {
+                    throw patchError(105, "Missing backup for \(entry.destination)")
+                }
+                guard fm.fileExists(atPath: dest.path) else {
+                    throw patchError(106, "Patched file is missing: \(entry.destination)")
+                }
+                let current = try Data(contentsOf: dest)
+                guard sha256(current) == entry.expectedSHA256 else {
+                    throw patchError(
+                        104,
+                        "Refusing to overwrite modified file: \(entry.destination)"
+                    )
+                }
+                guard fm.fileExists(atPath: backupPath) else {
+                    throw patchError(107, "Backup is missing for \(entry.destination)")
+                }
+            }
+        }
+
         var restored = 0
 
         for entry in record.entries.reversed() {
@@ -102,8 +150,12 @@ final class PatchStore: ObservableObject {
                 relativePath: entry.destination
             )
 
-            if let backupPath = entry.backupPath,
-               let backup = try? Data(contentsOf: URL(fileURLWithPath: backupPath)) {
+            if let backupPath = entry.backupPath {
+                let backup = try Data(contentsOf: URL(fileURLWithPath: backupPath))
+                try fm.createDirectory(
+                    at: dest.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
                 try backup.write(to: dest, options: .atomic)
                 restored += 1
             } else if entry.addedByPatch, fm.fileExists(atPath: dest.path) {
@@ -129,7 +181,10 @@ final class PatchStore: ObservableObject {
         let base = document.header.basePath
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             .replacingOccurrences(of: "\\", with: "/")
-        let destination = rule.relativePath.replacingOccurrences(of: "\\", with: "/")
+
+        let destination = rule.relativePath
+            .replacingOccurrences(of: "\\", with: "/")
+
         let prefix = base.isEmpty ? "" : base + "/"
         let expected = destination.hasPrefix(prefix)
             ? String(destination.dropFirst(prefix.count))
@@ -138,7 +193,11 @@ final class PatchStore: ObservableObject {
         let exact = document.files.filter {
             $0.path.replacingOccurrences(of: "\\", with: "/") == expected
         }
+
         if let unique = exact.first {
+            guard !usedPayloads.contains(unique.path) else {
+                throw patchError(108, "Payload is referenced more than once: \(unique.path)")
+            }
             usedPayloads.insert(unique.path)
             return unique.data
         }
@@ -161,16 +220,29 @@ final class PatchStore: ObservableObject {
         return unique.data
     }
 
-    private func saveBackup(projectKey: String, destination: URL, data: Data) throws -> URL {
+    private func saveBackup(
+        projectKey: String,
+        destination: URL,
+        data: Data
+    ) throws -> URL {
         let safe = Data(projectKey.utf8)
             .base64EncodedString()
             .replacingOccurrences(of: "/", with: "_")
+
         let dir = root.appendingPathComponent(safe, isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent(sha256(Data(destination.path.utf8)) + ".bak")
+        try FileManager.default.createDirectory(
+            at: dir,
+            withIntermediateDirectories: true
+        )
+
+        let url = dir.appendingPathComponent(
+            sha256(Data(destination.path.utf8)) + ".bak"
+        )
+
         if !FileManager.default.fileExists(atPath: url.path) {
             try data.write(to: url, options: .atomic)
         }
+
         return url
     }
 
@@ -183,16 +255,28 @@ final class PatchStore: ObservableObject {
 
     private func load() {
         let url = root.appendingPathComponent("records.json")
-        guard let data = try? Data(contentsOf: url),
-              let records = try? JSONDecoder().decode([String: PatchRecord].self, from: data) else { return }
+        guard
+            let data = try? Data(contentsOf: url),
+            let records = try? JSONDecoder().decode(
+                [String: PatchRecord].self,
+                from: data
+            )
+        else { return }
+
         activeRecords = records
     }
 
     private func sha256(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     private func patchError(_ code: Int, _ message: String) -> NSError {
-        NSError(domain: "Juancho", code: code, userInfo: [NSLocalizedDescriptionKey: message])
+        NSError(
+            domain: "Juancho",
+            code: code,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
     }
 }
