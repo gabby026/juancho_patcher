@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import CryptoKit
 
 @MainActor
 final class JuanchoModel: ObservableObject {
