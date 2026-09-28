@@ -14,16 +14,16 @@
     100000000000000000000008 = { isa = PBXBuildFile; fileRef = 100000000000000000000017; };
     100000000000000000000009 = { isa = PBXBuildFile; fileRef = 100000000000000000000018; };
 
-    100000000000000000000010 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/JuanchoApp.swift; sourceTree = "<group>"; };
-    100000000000000000000011 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Models.swift; sourceTree = "<group>"; };
-    100000000000000000000012 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Crypto.swift; sourceTree = "<group>"; };
-    100000000000000000000013 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/CompressionHelper.swift; sourceTree = "<group>"; };
-    100000000000000000000014 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/JuanchoPackage.swift; sourceTree = "<group>"; };
-    100000000000000000000015 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/FilesystemTarget.swift; sourceTree = "<group>"; };
-    100000000000000000000016 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/PatchStore.swift; sourceTree = "<group>"; };
-    100000000000000000000017 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/JuanchoModel.swift; sourceTree = "<group>"; };
-    100000000000000000000018 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ContentView.swift; sourceTree = "<group>"; };
-    100000000000000000000019 = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Resources/Info.plist; sourceTree = "<group>"; };
+    100000000000000000000010 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JuanchoApp.swift; sourceTree = "<group>"; };
+    100000000000000000000011 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+    100000000000000000000012 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crypto.swift; sourceTree = "<group>"; };
+    100000000000000000000013 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionHelper.swift; sourceTree = "<group>"; };
+    100000000000000000000014 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JuanchoPackage.swift; sourceTree = "<group>"; };
+    100000000000000000000015 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesystemTarget.swift; sourceTree = "<group>"; };
+    100000000000000000000016 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchStore.swift; sourceTree = "<group>"; };
+    100000000000000000000017 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JuanchoModel.swift; sourceTree = "<group>"; };
+    100000000000000000000018 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+    100000000000000000000019 = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 
     100000000000000000000020 = { isa = PBXGroup; children = (100000000000000000000010,); path = App; sourceTree = "<group>"; };
     100000000000000000000021 = { isa = PBXGroup; children = (100000000000000000000011,100000000000000000000012,100000000000000000000013,100000000000000000000014,100000000000000000000015,100000000000000000000016,100000000000000000000017,); path = Core; sourceTree = "<group>"; };
