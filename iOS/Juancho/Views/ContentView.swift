@@ -20,18 +20,47 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Package") {
+                Section("Packages") {
                     Button {
                         importer = true
                     } label: {
-                        Label("Select .juancho", systemImage: "doc.badge.plus")
+                        Label("Upload .juancho", systemImage: "square.and.arrow.up")
                     }
 
+                    if model.packageURLs.isEmpty {
+                        Text("No packages uploaded yet.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.packageURLs, id: \.path) { url in
+                            Button {
+                                model.selectStoredPackage(url)
+                            } label: {
+                                HStack {
+                                    Image(systemName: "doc.zipper")
+                                    Text(url.deletingPathExtension().lastPathComponent)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    if model.importedURL?.standardizedFileURL == url.standardizedFileURL {
+                                        Image(systemName: "checkmark.circle.fill")
+                                    }
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                }
+
+                Section("Selected package") {
                     if let doc = model.document {
                         LabeledContent("Project", value: doc.header.projectName)
                         LabeledContent("Target", value: doc.header.targetBundleID)
-                        LabeledContent("Files", value: "(doc.manifest.rules.count)")
+                        LabeledContent("Files", value: "\(doc.manifest.rules.count)")
                         LabeledContent("Password", value: doc.header.passwordProtected ? "Yes" : "No")
+                    } else {
+                        Text("Upload or select a .juancho package.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
 
                     Text(model.status)
@@ -82,7 +111,7 @@ struct ContentView: View {
             .navigationTitle("Juancho")
             .fileImporter(
                 isPresented: $importer,
-                allowedContentTypes: [.juanchoPackage, .data],
+                allowedContentTypes: [.data],
                 allowsMultipleSelection: false
             ) { result in
                 switch result {
@@ -91,15 +120,17 @@ struct ContentView: View {
                         model.errorMessage = "No package selected."
                         return
                     }
-                    let lower = url.pathExtension.lowercased()
-                    guard lower == "juancho" else {
+                    guard url.pathExtension.lowercased() == "juancho" else {
                         model.errorMessage = "Please select a .juancho package."
                         return
                     }
-                    model.importURL(url)
+                    model.uploadURL(url)
                 case .failure(let error):
                     model.errorMessage = error.localizedDescription
                 }
+            }
+            .onAppear {
+                model.loadPackages()
             }
             .alert(
                 "Juancho",
