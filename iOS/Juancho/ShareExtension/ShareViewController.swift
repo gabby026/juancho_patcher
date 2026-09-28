@@ -55,7 +55,7 @@ final class ShareViewController: UIViewController {
         UIPasteboard.general.setItems(
             [[Self.handoffType: data]],
             options: [
-                .localOnly,
+                .localOnly: true,
                 .expirationDate: Date().addingTimeInterval(300)
             ]
         )
