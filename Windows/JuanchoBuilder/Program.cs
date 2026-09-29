@@ -154,7 +154,7 @@ internal sealed class MainForm : Form
 
             var name = projectName.Text.Trim();
             var targetBundle = bundleId.Text.Trim();
-            var base = NormalizeRelative(basePath.Text);
+            var basePathNormalized = NormalizeRelative(basePath.Text);
             var source = Path.GetFullPath(sourcePath.Text.Trim());
 
             status.Text = "Scanning source...";
@@ -281,7 +281,7 @@ internal sealed class MainForm : Form
                 FormatVersion = 1,
                 ProjectName = name,
                 TargetBundleID = targetBundle,
-                BasePath = base,
+                BasePath = basePathNormalized,
                 PasswordProtected = protectedPackage,
                 Compression = "zlib",
                 PayloadEncoding = "juanchopayload-v1",
@@ -758,7 +758,7 @@ internal static class PackageCodec
     {
         var archive = archivePath.Replace('\\', '/').Trim('/');
         var base = basePath.Replace('\\', '/').Trim('/');
-        var prefix = string.IsNullOrEmpty(base) ? "" : base + "/";
+        var prefix = string.IsNullOrEmpty(basePathNormalized) ? "" : basePathNormalized + "/";
 
         return rules.FirstOrDefault(rule =>
         {
