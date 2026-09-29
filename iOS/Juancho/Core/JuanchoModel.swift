@@ -105,6 +105,7 @@ final class JuanchoModel: ObservableObject {
 
             try FileManager.default.copyItem(at: url, to: destination)
             loadPackages()
+            packagePath = destination.path
             importURL(destination)
             status = "Uploaded \(filename)"
         } catch {
@@ -245,7 +246,7 @@ final class JuanchoModel: ObservableObject {
         }
 
         guard candidates.count == 1, let only = candidates.first else {
-            let names = candidates.prefix(8).map(\\.lastPathComponent).joined(separator: "\n")
+            let names = candidates.prefix(8).map(\.lastPathComponent).joined(separator: "\n")
             throw NSError(
                 domain: "Juancho",
                 code: 204,
