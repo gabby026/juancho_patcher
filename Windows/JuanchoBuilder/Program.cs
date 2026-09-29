@@ -757,7 +757,7 @@ internal static class PackageCodec
     static RuleRecord? FindRule(string archivePath, string basePath, List<RuleRecord> rules)
     {
         var archive = archivePath.Replace('\\', '/').Trim('/');
-        var base = basePath.Replace('\\', '/').Trim('/');
+        var basePathNormalized = basePath.Replace('\\', '/').Trim('/');
         var prefix = string.IsNullOrEmpty(basePathNormalized) ? "" : basePathNormalized + "/";
 
         return rules.FirstOrDefault(rule =>
