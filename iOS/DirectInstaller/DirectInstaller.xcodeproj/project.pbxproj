@@ -6,33 +6,33 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B00100000000000000000001 = {isa = PBXBuildFile; fileRef = F00100000000000000000001; };
-		B00100000000000000000002 = {isa = PBXBuildFile; fileRef = F00100000000000000000002; };
-		B00100000000000000000003 = {isa = PBXBuildFile; fileRef = F00100000000000000000003; };
-		B00100000000000000000004 = {isa = PBXBuildFile; fileRef = F00100000000000000000004; };
-		B00100000000000000000005 = {isa = PBXBuildFile; fileRef = F00100000000000000000005; };
-		B00100000000000000000006 = {isa = PBXBuildFile; fileRef = F00100000000000000000006; };
-		B00100000000000000000007 = {isa = PBXBuildFile; fileRef = F00100000000000000000007; };
-		B00100000000000000000008 = {isa = PBXBuildFile; fileRef = F00100000000000000000008; };
-		B00100000000000000000009 = {isa = PBXBuildFile; fileRef = F00100000000000000000009; };
+		A10100000000000000000001 = {isa = PBXBuildFile; fileRef = A20100000000000000000001; };
+		A10100000000000000000002 = {isa = PBXBuildFile; fileRef = A20100000000000000000002; };
+		A10100000000000000000003 = {isa = PBXBuildFile; fileRef = A20100000000000000000003; };
+		A10100000000000000000004 = {isa = PBXBuildFile; fileRef = A20100000000000000000004; };
+		A10100000000000000000005 = {isa = PBXBuildFile; fileRef = A20100000000000000000005; };
+		A10100000000000000000006 = {isa = PBXBuildFile; fileRef = A20100000000000000000006; };
+		A10100000000000000000007 = {isa = PBXBuildFile; fileRef = A20100000000000000000007; };
+		A10100000000000000000008 = {isa = PBXBuildFile; fileRef = A20100000000000000000008; };
+		A10100000000000000000009 = {isa = PBXBuildFile; fileRef = A20100000000000000000009; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		F00100000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainUploaderApp.swift; sourceTree = "<group>"; };
-		F00100000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		F00100000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadViewModel.swift; sourceTree = "<group>"; };
-		F00100000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		F00100000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crypto.swift; sourceTree = "<group>"; };
-		F00100000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionHelper.swift; sourceTree = "<group>"; };
-		F00100000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JuanchoPackage.swift; sourceTree = "<group>"; };
-		F00100000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesystemTarget.swift; sourceTree = "<group>"; };
-		F00100000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchStore.swift; sourceTree = "<group>"; };
-		F00100000000000000000010 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		F00200000000000000000001 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DirectInstaller.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20100000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainUploaderApp.swift; sourceTree = "<group>"; };
+		A20100000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A20100000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadViewModel.swift; sourceTree = "<group>"; };
+		A20100000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A20100000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crypto.swift; sourceTree = "<group>"; };
+		A20100000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionHelper.swift; sourceTree = "<group>"; };
+		A20100000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JuanchoPackage.swift; sourceTree = "<group>"; };
+		A20100000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesystemTarget.swift; sourceTree = "<group>"; };
+		A20100000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchStore.swift; sourceTree = "<group>"; };
+		A20100000000000000000010 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20200000000000000000001 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DirectInstaller.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		FRM10000000000000000000001 = {
+		A30100000000000000000001 = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = ();
@@ -41,35 +41,35 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		GRP10000000000000000000001 = {
+		A40100000000000000000001 = {
 			isa = PBXGroup;
 			children = (
-				GRP10000000000000000000002,
-				GRP10000000000000000000003,
+				A40100000000000000000002,
+				A40100000000000000000003,
 			);
 			sourceTree = "<group>";
 		};
-		GRP10000000000000000000002 = {
+		A40100000000000000000002 = {
 			isa = PBXGroup;
 			children = (
-				F00100000000000000000001,
-				F00100000000000000000002,
-				F00100000000000000000003,
-				F00100000000000000000004,
-				F00100000000000000000005,
-				F00100000000000000000006,
-				F00100000000000000000007,
-				F00100000000000000000008,
-				F00100000000000000000009,
-				F00100000000000000000010,
+				A20100000000000000000001,
+				A20100000000000000000002,
+				A20100000000000000000003,
+				A20100000000000000000004,
+				A20100000000000000000005,
+				A20100000000000000000006,
+				A20100000000000000000007,
+				A20100000000000000000008,
+				A20100000000000000000009,
+				A20100000000000000000010,
 			);
 			path = DirectInstaller;
 			sourceTree = "<group>";
 		};
-		GRP10000000000000000000003 = {
+		A40100000000000000000003 = {
 			isa = PBXGroup;
 			children = (
-				F00200000000000000000001,
+				A20200000000000000000001,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -77,37 +77,37 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		TGT10000000000000000000001 = {
+		A50100000000000000000001 = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = CFG10000000000000000000002;
+			buildConfigurationList = A60100000000000000000002;
 			buildPhases = (
-				SRC10000000000000000000001,
-				FRM10000000000000000000001,
-				RES10000000000000000000001,
+				A30300000000000000000001,
+				A30100000000000000000001,
+				A30200000000000000000001,
 			);
 			buildRules = ();
 			dependencies = ();
 			name = DirectInstaller;
 			productName = DirectInstaller;
-			productReference = F00200000000000000000001;
+			productReference = A20200000000000000000001;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		PRJ10000000000000000000001 = {
+		A70100000000000000000001 = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
-					TGT10000000000000000000001 = {
+					A50100000000000000000001 = {
 						CreatedOnToolsVersion = 16.0;
 					};
 				};
 			};
-			buildConfigurationList = CFG10000000000000000000001;
+			buildConfigurationList = A60100000000000000000001;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -115,18 +115,18 @@
 				en,
 				Base,
 			);
-			mainGroup = GRP10000000000000000000001;
-			productRefGroup = GRP10000000000000000000003;
+			mainGroup = A40100000000000000000001;
+			productRefGroup = A40100000000000000000003;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				TGT10000000000000000000001,
+				A50100000000000000000001,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		RES10000000000000000000001 = {
+		A30200000000000000000001 = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = ();
@@ -135,26 +135,26 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		SRC10000000000000000000001 = {
+		A30300000000000000000001 = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B00100000000000000000001,
-				B00100000000000000000002,
-				B00100000000000000000003,
-				B00100000000000000000004,
-				B00100000000000000000005,
-				B00100000000000000000006,
-				B00100000000000000000007,
-				B00100000000000000000008,
-				B00100000000000000000009,
+				A10100000000000000000001,
+				A10100000000000000000002,
+				A10100000000000000000003,
+				A10100000000000000000004,
+				A10100000000000000000005,
+				A10100000000000000000006,
+				A10100000000000000000007,
+				A10100000000000000000008,
+				A10100000000000000000009,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		CFG20000000000000000000001 = {
+		A80100000000000000000001 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -196,7 +196,7 @@
 			};
 			name = Debug;
 		};
-		CFG20000000000000000000002 = {
+		A80100000000000000000002 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -239,25 +239,25 @@
 			};
 			name = Release;
 		};
-		CFG10000000000000000000001 = {
+		A60100000000000000000001 = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				CFG20000000000000000000001,
-				CFG20000000000000000000002,
+				A80100000000000000000001,
+				A80100000000000000000002,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CFG10000000000000000000002 = {
+		A60100000000000000000002 = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				CFG30000000000000000000001,
-				CFG30000000000000000000002,
+				A80200000000000000000001,
+				A80200000000000000000002,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CFG30000000000000000000001 = {
+		A80200000000000000000001 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -281,7 +281,7 @@
 			};
 			name = Debug;
 		};
-		CFG30000000000000000000002 = {
+		A80200000000000000000002 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -310,5 +310,5 @@
 			name = Release;
 		};
 	};
-	rootObject = PRJ10000000000000000000001;
+	rootObject = A70100000000000000000001;
 }
