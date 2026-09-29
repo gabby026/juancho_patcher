@@ -166,7 +166,7 @@ internal sealed class MainForm : Form
                 .EnumerateFiles(source, "*", SearchOption.AllDirectories)
                 .Select(p => new SourceFile(
                     p,
-                    Path.GetRelativePath(source, p).Replace('\', '/')))
+                    Path.GetRelativePath(source, p).Replace('\\', '/')))
                 .OrderBy(x => x.RelativePath, StringComparer.Ordinal)
                 .ToList();
 
@@ -207,7 +207,7 @@ internal sealed class MainForm : Form
                 ProjectName = name,
                 BundleIdentifiers = new[] { targetBundle },
                 Directories = rules
-                    .Select(r => Path.GetDirectoryName(r.RelativePath)?.Replace('\', '/') ?? "")
+                    .Select(r => Path.GetDirectoryName(r.RelativePath)?.Replace('\\', '/') ?? "")
                     .Where(p => !string.IsNullOrWhiteSpace(p))
                     .Distinct(StringComparer.Ordinal)
                     .OrderBy(p => p, StringComparer.Ordinal)
@@ -442,7 +442,7 @@ internal sealed class MainForm : Form
 
     static string NormalizeRelative(string value)
     {
-        var normalized = value.Trim().Replace('\', '/').Trim('/');
+        var normalized = value.Trim().Replace('\\', '/').Trim('/');
 
         if (normalized.Contains("..", StringComparison.Ordinal) ||
             normalized.Contains(':') ||
@@ -739,7 +739,7 @@ internal static class PackageCodec
 
         foreach (var rule in manifest.Rules)
         {
-            var normalized = rule.RelativePath.Replace('\', '/').Trim('/');
+            var normalized = rule.RelativePath.Replace('\\', '/').Trim('/');
 
             if (rule.Operation != "replace" ||
                 rule.BundleID != header.TargetBundleID ||
@@ -756,13 +756,13 @@ internal static class PackageCodec
 
     static RuleRecord? FindRule(string archivePath, string basePath, List<RuleRecord> rules)
     {
-        var archive = archivePath.Replace('\', '/').Trim('/');
-        var base = basePath.Replace('\', '/').Trim('/');
+        var archive = archivePath.Replace('\\', '/').Trim('/');
+        var base = basePath.Replace('\\', '/').Trim('/');
         var prefix = string.IsNullOrEmpty(base) ? "" : base + "/";
 
         return rules.FirstOrDefault(rule =>
         {
-            var destination = rule.RelativePath.Replace('\', '/').Trim('/');
+            var destination = rule.RelativePath.Replace('\\', '/').Trim('/');
             var candidate = destination.StartsWith(prefix, StringComparison.Ordinal)
                 ? destination[prefix.Length..]
                 : destination;
@@ -802,7 +802,7 @@ internal static class PackageCodec
                 throw new InvalidDataException("Malformed archive entry length.");
 
             var path = Encoding.UTF8.GetString(data, cursor, pathLength)
-                .Replace('\', '/')
+                .Replace('\\', '/')
                 .Trim('/');
             cursor += pathLength;
 
