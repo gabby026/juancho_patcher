@@ -184,7 +184,7 @@ enum LegacyJuanchoCodec {
 
             guard seenDestinations.insert(destination).inserted else {
                 throw LegacyJuanchoError.extractionFailed(
-                    "Duplicate destination generated for (destination)."
+                    "Duplicate destination generated for \(destination)."
                 )
             }
 
@@ -285,6 +285,17 @@ enum LegacyJuanchoCodec {
         // For MLBB legacy packages, treat each archive item as relative to the
         // application's Documents/dragon2017/assets directory.
         return defaultBasePath + "/" + normalized
+    }
+
+    private static func relativeSourcePath(forDestination destination: String) -> String {
+        let normalized = normalizeArchivePath(destination)
+        let prefix = normalizeArchivePath(defaultBasePath) + "/"
+
+        if normalized.hasPrefix(prefix) {
+            return String(normalized.dropFirst(prefix.count))
+        }
+
+        return normalized
     }
 
     private static func normalizeArchivePath(_ path: String) -> String {
