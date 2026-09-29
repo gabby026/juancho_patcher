@@ -1,56 +1,105 @@
 # Juancho Patcher
 
-Juancho is a custom patch-package format and iOS patch manager designed for devices where the app already has filesystem privileges.
+Juancho is a custom patch-package format and iOS patch manager for devices where the app already has the filesystem privileges required to access the target application.
 
-## Package flow
+## Final package flow
 
-Windows builder creates:
+The Windows builder creates:
 
 `ProjectName.juancho`
 
-The package contains a versioned header, a compressed manifest/archive payload, and optional AES-GCM encryption using a PBKDF2-HMAC-SHA256 derived key.
+The iOS Juancho app consumes that exact JUANCHO1 format.
 
-The iOS app can now load a package in three ways:
+### Windows
 
-1. upload a `.juancho` file through the Files picker;
-2. select a stored `.juancho` package;
-3. enter an absolute path to a `.juancho` file, or to a folder containing exactly one `.juancho` file.
+Use **JuanchoBuilder.exe** to:
 
-With **Load & Patch**, the app:
+- choose the replacement source folder;
+- enter the target Bundle ID;
+- enter the target base path such as `assets`;
+- optionally enter a password;
+- create `ProjectName.juancho` on the Desktop;
+- extract a `.juancho` package for verification.
 
-1. locates the `.juancho` package;
-2. validates the package header;
-3. asks for the password when the package is protected;
-4. decompresses/decrypts the package payload in memory;
-5. validates the manifest, paths, file sizes, and SHA-256 values;
-6. resolves the target application by bundle identifier;
-7. backs up every existing destination file;
-8. writes replacement files atomically;
-9. verifies the installed SHA-256 values;
-10. rolls back the current operation if verification fails.
+A password enables AES-GCM encryption using PBKDF2-HMAC-SHA256. No password means the package is unencrypted.
 
-**Unpatch / Restore** uses the persistent patch record and reverses the operation: it restores each backed-up file or removes files that were newly added by the patch. It also refuses to overwrite/remove a patched file that has been modified since installation.
+### iOS
 
-The package payload is not extracted blindly into the target application. The app decodes it into memory and only writes files after validation.
+The iOS app can load a package by:
+
+- Uploading a `.juancho` file;
+- Selecting a previously uploaded package;
+- Entering the absolute path to a `.juancho` file;
+- Entering a folder path that contains exactly one `.juancho`.
+
+Loading a package only validates the package header.
+
+When **Patch** is pressed:
+
+- if the package is unprotected, patching proceeds immediately;
+- if the package is protected, Juancho asks for the password at that moment;
+- the password is never needed for an unprotected package.
+
+The package is decrypted and decompressed in memory. The payload, manifest, paths, file sizes, and SHA-256 values are validated before anything is written to the target application.
+
+The patch operation then:
+
+1. resolves the target application by Bundle ID;
+2. backs up every existing destination file;
+3. writes each replacement atomically;
+4. verifies the resulting SHA-256;
+5. rolls back the operation if a write or verification fails.
+
+**Unpatch / Restore** performs the reverse operation. It verifies that patched files have not been unexpectedly modified, restores the saved backups, removes files that were originally absent, and clears the patch record.
+
+## JUANCHO1 format
+
+Package layout:
+
+`JUANCHO1` magic
++ version byte
++ encryption flags
++ little-endian header length
++ UTF-8 JSON header
++ compressed payload
+
+Payload layout:
+
+little-endian manifest length
++ JSON manifest
++ `JNPAYL1` archive
++ archive file entries
+
+The Windows builder and iOS decoder deliberately use the same format. A raw ZIP or raw 7-Zip archive renamed to `.juancho` is not a valid JUANCHO1 package.
 
 ## Security
 
-Password-protected packages use the existing Juancho AES-GCM/PBKDF2 implementation. The package must contain valid crypto metadata, and an incorrect password causes authentication failure before the payload is accepted.
+Protected packages use:
+
+- PBKDF2-HMAC-SHA256;
+- a random salt;
+- a random 96-bit AES-GCM nonce;
+- AES-256-GCM;
+- authenticated metadata using `JUANCHO1/v1/<projectName>`.
+
+The iOS decoder authenticates the encrypted payload before accepting it.
 
 ## iOS target
 
 Deployment target: iOS 16.0.
 
-The app does not contain or rely on a sandbox escape. Direct access to another application's container only works when the runtime/device already grants the necessary filesystem privileges.
+The app does not contain or rely on a sandbox escape. Direct access to another application's container only works when the runtime/device already grants the required filesystem privileges.
 
 ## Build
 
+### iOS
+
 Open `iOS/Juancho/Juancho.xcodeproj` in Xcode.
 
-For an unsigned CI build, run the GitHub Actions workflow **Build Juancho unsigned IPA**. The workflow packages the generated `Juancho.app` as an IPA artifact.
+The repository includes the **Build Juancho unsigned IPA** GitHub Actions workflow.
 
-## Package format
+### Windows
 
-The custom extension is `.juancho`. A separate `.manifest.json` is only a human-readable export from the Windows builder; the iOS app reads the manifest embedded in the package payload.
+Open `Windows/JuanchoBuilder/JuanchoBuilder.csproj` with .NET 8.
 
-**Important:** a raw 7-Zip archive that was merely renamed to `.juancho` is not the same as a Juancho package. The Windows builder should emit the JUANCHO1 package format used by `JuanchoPackageCodec`.
+The repository includes the **Build Juancho Windows Builder** GitHub Actions workflow and publishes a self-contained x64 executable.

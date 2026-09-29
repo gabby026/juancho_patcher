@@ -1,0 +1,43 @@
+name: Build Juancho Windows Builder
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build self-contained Windows EXE
+        run: >
+          dotnet publish Windows/JuanchoBuilder/JuanchoBuilder.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o build/windows
+
+      - name: Validate executable
+        shell: pwsh
+        run: |
+          if (!(Test-Path "build/windows/JuanchoBuilder.exe")) {
+            throw "JuanchoBuilder.exe was not produced."
+          }
+
+      - name: Upload Windows builder
+        uses: actions/upload-artifact@v4
+        with:
+          name: Juancho-Windows-Builder
+          path: build/windows/JuanchoBuilder.exe
+          if-no-files-found: error
