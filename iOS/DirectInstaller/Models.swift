@@ -1,6 +1,6 @@
 import Foundation
 
-struct JuanchoPackageHeader: Codable {
+struct JuanchoPackageHeader: Codable, Sendable {
     let formatVersion: Int
     let projectName: String
     let targetBundleID: String
@@ -19,7 +19,7 @@ struct JuanchoPackageHeader: Codable {
     let aad: String?
 }
 
-struct JuanchoRule: Codable, Identifiable, Hashable {
+struct JuanchoRule: Codable, Identifiable, Hashable, Sendable {
     var id: String { relativePath }
     let operation: String
     let containerKind: String
@@ -31,7 +31,7 @@ struct JuanchoRule: Codable, Identifiable, Hashable {
     let canRemove: Bool
 }
 
-struct JuanchoManifest: Codable {
+struct JuanchoManifest: Codable, Sendable {
     let formatVersion: Int
     let projectName: String
     let bundleIdentifiers: [String]
@@ -39,18 +39,18 @@ struct JuanchoManifest: Codable {
     let rules: [JuanchoRule]
 }
 
-struct JuanchoFile: Hashable {
+struct JuanchoFile: Hashable, Sendable {
     let path: String
     let data: Data
 }
 
-struct JuanchoDocument {
+struct JuanchoDocument: Sendable {
     let header: JuanchoPackageHeader
     let manifest: JuanchoManifest
     let files: [JuanchoFile]
 }
 
-struct PatchRecord: Codable {
+struct PatchRecord: Codable, Sendable {
     var id: String { "\(packageName)|\(bundleID)" }
 
     var packageName: String
@@ -58,7 +58,7 @@ struct PatchRecord: Codable {
     var appliedAt: Date
     var entries: [Entry]
 
-    struct Entry: Codable {
+    struct Entry: Codable, Sendable {
         var destination: String
         var backupPath: String?
         var addedByPatch: Bool
