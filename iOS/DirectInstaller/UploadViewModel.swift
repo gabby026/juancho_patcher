@@ -174,7 +174,7 @@ final class UploadViewModel: ObservableObject {
         guard operationTask == nil else { return }
 
         guard isOfficialBuild else {
-            present(InstallError.unofficialBuild)
+            present(NSError(domain: "Juancho", code: 403, userInfo: [NSLocalizedDescriptionKey: "This is not an official Juancho Installer build."]))
             return
         }
 
