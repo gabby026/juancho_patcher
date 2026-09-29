@@ -31,6 +31,11 @@ final class UploadViewModel: ObservableObject {
     @Published private(set) var sourceScanned = false
 
     @Published private(set) var logLines: [String] = []
+
+    @Published private(set) var targetContainerPath = ""
+    @Published private(set) var targetAssetsPath = ""
+    @Published private(set) var targetPathLoading = false
+    @Published private(set) var targetPathMessage = ""
     @Published var showingError = false
     @Published var errorMessage = ""
     @Published var passwordPrompt = false
@@ -72,6 +77,35 @@ final class UploadViewModel: ObservableObject {
             fromByteCount: sourceTotalBytes,
             countStyle: .file
         )
+    }
+
+    func loadTargetPath() {
+        guard !targetPathLoading else { return }
+
+        let bundleID = document?.header.targetBundleID
+            ?? LegacyJuanchoCodec.defaultBundleID
+
+        targetPathLoading = true
+        targetPathMessage = ""
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let info = try await Task.detached(priority: .userInitiated) {
+                    try TargetPathResolver.resolve(bundleID: bundleID)
+                }.value
+
+                self.targetContainerPath = info.containerPath
+                self.targetAssetsPath = info.assetsPath
+            } catch {
+                self.targetContainerPath = ""
+                self.targetAssetsPath = ""
+                self.targetPathMessage = error.localizedDescription
+            }
+
+            self.targetPathLoading = false
+        }
     }
 
     func scanSource() {
@@ -446,6 +480,29 @@ final class UploadViewModel: ObservableObject {
     private func present(_ error: Error) {
         errorMessage = error.localizedDescription
         showingError = true
+    }
+}
+
+private struct TargetPathInfo: Sendable {
+    let containerPath: String
+    let assetsPath: String
+}
+
+private enum TargetPathResolver {
+    static func resolve(bundleID: String) throws -> TargetPathInfo {
+        let container = try FilesystemTarget.locateApplication(
+            bundleID: bundleID
+        )
+
+        let assets = try FilesystemTarget.destinationURL(
+            container: container,
+            relativePath: LegacyJuanchoCodec.defaultBasePath
+        )
+
+        return TargetPathInfo(
+            containerPath: container.url.path,
+            assetsPath: assets.deletingLastPathComponent().path
+        )
     }
 }
 
