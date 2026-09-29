@@ -440,7 +440,10 @@ private struct PatchRow: View {
                                 .font(.caption2)
                                 .foregroundStyle(entry.addedByPatch ? .green : .orange)
 
-                            Text(entry.destination)
+                            Text(
+                                entry.sourcePath
+                                    ?? URL(fileURLWithPath: entry.destination).lastPathComponent
+                            )
                                 .font(.caption.monospaced())
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
