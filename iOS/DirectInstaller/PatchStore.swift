@@ -37,7 +37,7 @@ final class PatchStore: ObservableObject {
         )
 
         let projectKey =
-            "(document.header.projectName)|(document.header.targetBundleID)"
+            "\(document.header.projectName)|\(document.header.targetBundleID)"
 
         if activeRecords[projectKey] != nil {
             throw patchError(100, "This patch is already applied.")
@@ -104,7 +104,7 @@ final class PatchStore: ObservableObject {
                 guard sha256(written) == rule.sha256 else {
                     throw patchError(
                         102,
-                        "Hash verification failed after writing (rule.relativePath)."
+                        "Hash verification failed after writing \(rule.relativePath)."
                     )
                 }
 
@@ -147,7 +147,7 @@ final class PatchStore: ObservableObject {
         activeRecords[projectKey] = record
         save()
 
-        return "Patched (recordEntries.count) files."
+        return "Patched \(recordEntries.count) files."
     }
 
     func unpatch(
@@ -155,7 +155,7 @@ final class PatchStore: ObservableObject {
         bundleID: String,
         onProgress: @escaping (_ processed: Int, _ total: Int, _ path: String) -> Void
     ) async throws -> String {
-        let projectKey = "(projectName)|(bundleID)"
+        let projectKey = "\(projectName)|\(bundleID)"
 
         guard let record = activeRecords[projectKey] else {
             throw patchError(
@@ -179,7 +179,7 @@ final class PatchStore: ObservableObject {
                 relativePath: entry.destination
             )
 
-            onProgress(0, total, "Checking (entry.destination)")
+            onProgress(0, total, "Checking \(entry.destination)")
             await Task.yield()
 
             if entry.addedByPatch {
@@ -189,7 +189,7 @@ final class PatchStore: ObservableObject {
                     guard sha256(current) == entry.expectedSHA256 else {
                         throw patchError(
                             104,
-                            "Refusing to remove modified file: (entry.destination)"
+                            "Refusing to remove modified file: \(entry.destination)"
                         )
                     }
                 }
@@ -197,14 +197,14 @@ final class PatchStore: ObservableObject {
                 guard let backupPath = entry.backupPath else {
                     throw patchError(
                         105,
-                        "Missing backup for (entry.destination)"
+                        "Missing backup for \(entry.destination)"
                     )
                 }
 
                 guard fm.fileExists(atPath: dest.path) else {
                     throw patchError(
                         106,
-                        "Patched file is missing: (entry.destination)"
+                        "Patched file is missing: \(entry.destination)"
                     )
                 }
 
@@ -213,14 +213,14 @@ final class PatchStore: ObservableObject {
                 guard sha256(current) == entry.expectedSHA256 else {
                     throw patchError(
                         104,
-                        "Refusing to overwrite modified file: (entry.destination)"
+                        "Refusing to overwrite modified file: \(entry.destination)"
                     )
                 }
 
                 guard fm.fileExists(atPath: backupPath) else {
                     throw patchError(
                         107,
-                        "Backup is missing for (entry.destination)"
+                        "Backup is missing for \(entry.destination)"
                     )
                 }
             }
@@ -236,11 +236,7 @@ final class PatchStore: ObservableObject {
                 relativePath: entry.destination
             )
 
-            onProgress(
-                restored,
-                total,
-                entry.destination
-            )
+            onProgress(restored, total, entry.destination)
             await Task.yield()
 
             if let backupPath = entry.backupPath {
@@ -265,25 +261,14 @@ final class PatchStore: ObservableObject {
                 restored += 1
             }
 
-            onProgress(
-                restored,
-                total,
-                entry.destination
-            )
+            onProgress(restored, total, entry.destination)
             await Task.yield()
         }
 
         activeRecords.removeValue(forKey: projectKey)
         save()
 
-        return "Unpatched (restored) files."
-    }
-
-    func state(
-        projectName: String,
-        bundleID: String
-    ) -> PatchRecord? {
-        activeRecords["(projectName)|(bundleID)"]
+        return "Unpatched \(restored) files."
     }
 
     private func replacementData(
@@ -312,7 +297,7 @@ final class PatchStore: ObservableObject {
             guard !usedPayloads.contains(unique.path) else {
                 throw patchError(
                     108,
-                    "Payload is referenced more than once: (unique.path)"
+                    "Payload is referenced more than once: \(unique.path)"
                 )
             }
 
@@ -334,8 +319,8 @@ final class PatchStore: ObservableObject {
             throw patchError(
                 101,
                 unusedByName.isEmpty
-                    ? "Missing replacement payload: (rule.replacementFilename)"
-                    : "Ambiguous replacement payload: (rule.replacementFilename)"
+                    ? "Missing replacement payload: \(rule.replacementFilename)"
+                    : "Ambiguous replacement payload: \(rule.replacementFilename)"
             )
         }
 
