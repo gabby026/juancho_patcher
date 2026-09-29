@@ -33,6 +33,7 @@ final class UploadViewModel: ObservableObject {
     @Published private(set) var failedCount = 0
     @Published private(set) var installCompleted = false
     @Published private(set) var logLines: [String] = []
+    @Published private(set) var activePatches: [PatchRecord] = []
     @Published var showingError = false
     @Published var errorMessage = ""
     @Published private(set) var destinationStatus = ""
@@ -41,7 +42,7 @@ final class UploadViewModel: ObservableObject {
     @Published private(set) var sourceSucceeded = false
     @Published private(set) var isOfficialBuild = true
 
-    private var installTask: Task<Void, Never>?
+    private var operationTask: Task<Void, Never>?
 
     private enum Keys {
         static let destinationPath = "destinationPath"
@@ -53,9 +54,13 @@ final class UploadViewModel: ObservableObject {
             ?? "/var/mobile/Containers/Data/Application/98A6EB7C-2C40-4D27-B1A0-D28DBEA784E1/Documents/dragon2017/assets"
         sourcePath = UserDefaults.standard.string(forKey: Keys.sourcePath) ?? ""
         isOfficialBuild = Bundle.main.bundleIdentifier == "com.Juancho.Installer"
+
+        Task {
+            await refreshPatches()
+        }
     }
 
-    var canInstall: Bool {
+    var canPatch: Bool {
         !sourcePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !destinationPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !isBusy
@@ -71,6 +76,10 @@ final class UploadViewModel: ObservableObject {
 
     var logText: String {
         logLines.joined(separator: "\n")
+    }
+
+    func refreshPatches() async {
+        activePatches = await PatchManager.shared.listPatches()
     }
 
     func testSourcePath() async {
@@ -123,8 +132,8 @@ final class UploadViewModel: ObservableObject {
         }
     }
 
-    func installSourcePath() async {
-        guard installTask == nil else { return }
+    func patchSourcePath() async {
+        guard operationTask == nil else { return }
 
         guard isOfficialBuild else {
             present(InstallError.unofficialBuild)
@@ -148,18 +157,18 @@ final class UploadViewModel: ObservableObject {
         failedCount = 0
         logLines = []
 
-        installTask = Task { [weak self] in
+        operationTask = Task { [weak self] in
             guard let self else { return }
 
             defer {
                 Task { @MainActor in
                     self.isBusy = false
-                    self.installTask = nil
+                    self.operationTask = nil
                 }
             }
 
             do {
-                self.appendLog("Scanning \(sourceURL.lastPathComponent)…")
+                self.appendLog("Preparing patch from \(sourceURL.lastPathComponent)…")
 
                 let files = try await Task.detached(priority: .userInitiated) {
                     try FileScanner.scan(folderURL: sourceURL)
@@ -171,47 +180,101 @@ final class UploadViewModel: ObservableObject {
                     throw InstallError.noSourceFiles(sourceURL.path)
                 }
 
-                self.appendLog("Found \(files.count) file(s) to install.")
+                self.appendLog("Found \(files.count) file(s) to patch.")
                 self.appendLog("Destination: \(self.destinationPath)")
-                self.appendLog("Using direct filesystem installation — no WebDAV.")
+                self.appendLog("Original files will be backed up before replacement.")
 
-                let installer = try DirectFileInstaller(
-                    destinationPath: self.destinationPath
-                )
-
-                let result = await installer.install(
+                let record = try await PatchManager.shared.patch(
                     files: files,
+                    sourcePath: sourceURL.path,
+                    destinationPath: self.destinationPath,
                     onEvent: { event in
                         await self.handle(event)
                     }
                 )
 
                 if Task.isCancelled {
-                    self.appendLog("Installation cancelled.")
+                    self.appendLog("Patch cancelled.")
                     return
                 }
 
-                self.successCount = result.succeeded
-                self.failedCount = result.failed
-                self.processedFiles = result.succeeded + result.failed
-                self.progress = self.totalFiles == 0
-                    ? 0
-                    : Double(self.processedFiles) / Double(self.totalFiles)
-
-                self.installCompleted = result.failed == 0
+                self.successCount = record.fileCount
+                self.processedFiles = record.fileCount
+                self.progress = 1
+                self.installCompleted = true
                 self.appendLog(
-                    "Done! \(result.succeeded) installed, \(result.failed) failed."
+                    "Patch complete! \(record.fileCount) file(s) replaced and backed up."
                 )
+                self.activePatches = await PatchManager.shared.listPatches()
             } catch is CancellationError {
-                self.appendLog("Installation cancelled.")
+                self.appendLog("Patch cancelled.")
             } catch {
                 self.present(error)
             }
         }
     }
 
-    func cancelInstall() {
-        installTask?.cancel()
+    func unpatch(_ patch: PatchRecord) async {
+        guard operationTask == nil else { return }
+
+        guard isOfficialBuild else {
+            present(InstallError.unofficialBuild)
+            return
+        }
+
+        isBusy = true
+        installCompleted = false
+        progress = 0
+        totalFiles = patch.fileCount
+        processedFiles = 0
+        successCount = 0
+        failedCount = 0
+        logLines = []
+
+        operationTask = Task { [weak self] in
+            guard let self else { return }
+
+            defer {
+                Task { @MainActor in
+                    self.isBusy = false
+                    self.operationTask = nil
+                }
+            }
+
+            do {
+                self.appendLog("Unpatching \(patch.fileCount) file(s)…")
+                self.appendLog("Restoring: \(patch.destinationPath)")
+
+                try await PatchManager.shared.unpatch(
+                    patch,
+                    onEvent: { event in
+                        await self.handle(event)
+                    }
+                )
+
+                if Task.isCancelled {
+                    self.appendLog("Unpatch cancelled.")
+                    return
+                }
+
+                self.successCount = patch.fileCount
+                self.processedFiles = patch.fileCount
+                self.progress = 1
+                self.installCompleted = true
+                self.appendLog(
+                    "Unpatch complete! Original files have been restored."
+                )
+                self.activePatches = await PatchManager.shared.listPatches()
+            } catch is CancellationError {
+                self.appendLog("Unpatch cancelled.")
+            } catch {
+                self.present(error)
+            }
+        }
+    }
+
+    func cancelOperation() {
+        operationTask?.cancel()
     }
 
     private func sourceFolderURL() throws -> URL {
@@ -242,8 +305,10 @@ final class UploadViewModel: ObservableObject {
         switch event {
         case .creatingDirectory(let path):
             appendLog("Creating folder: \(path)")
+
         case let .installing(current, total, path):
             appendLog("Installing [\(current)/\(total)]: \(path)")
+
         case .installed(let path):
             successCount += 1
             processedFiles += 1
@@ -251,7 +316,47 @@ final class UploadViewModel: ObservableObject {
                 ? 0
                 : Double(processedFiles) / Double(totalFiles)
             appendLog("Installed [\(processedFiles)/\(totalFiles)]: \(path)")
+
         case .failed(let path, let reason):
+            failedCount += 1
+            processedFiles += 1
+            progress = totalFiles == 0
+                ? 0
+                : Double(processedFiles) / Double(totalFiles)
+            appendLog(
+                "Failed [\(processedFiles)/\(totalFiles)]: \(path) — \(reason)"
+            )
+        }
+    }
+
+    private func handle(_ event: PatchEvent) {
+        switch event {
+        case let .backingUp(current, total, path):
+            appendLog("Backing up [\(current)/\(total)]: \(path)")
+
+        case let .replacing(current, total, path):
+            appendLog("Replacing [\(current)/\(total)]: \(path)")
+
+        case .patched(let path):
+            successCount += 1
+            processedFiles += 1
+            progress = totalFiles == 0
+                ? 0
+                : Double(processedFiles) / Double(totalFiles)
+            appendLog("Patched [\(processedFiles)/\(totalFiles)]: \(path)")
+
+        case let .restoring(current, total, path):
+            appendLog("Restoring [\(current)/\(total)]: \(path)")
+
+        case .restored(let path):
+            successCount += 1
+            processedFiles += 1
+            progress = totalFiles == 0
+                ? 0
+                : Double(processedFiles) / Double(totalFiles)
+            appendLog("Restored [\(processedFiles)/\(totalFiles)]: \(path)")
+
+        case let .failed(path, reason):
             failedCount += 1
             processedFiles += 1
             progress = totalFiles == 0
