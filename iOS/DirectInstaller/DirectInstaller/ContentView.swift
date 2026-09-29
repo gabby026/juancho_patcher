@@ -18,6 +18,7 @@ struct ContentView: View {
                         destinationCard
                         folderCard
                         progressCard
+                        activePatchesCard
                         logCard
                     }
                     .padding()
@@ -223,27 +224,46 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                Button {
-                    focusedField = nil
-                    Task { await model.installSourcePath() }
-                } label: {
-                    Label(
-                        model.isBusy ? "Installing…" : "Install files",
-                        systemImage: "arrow.down.circle.fill"
-                    )
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 10) {
+                    Button {
+                        focusedField = nil
+                        Task { await model.patchSourcePath() }
+                    } label: {
+                        Label(
+                            model.isBusy ? "Working…" : "Patch Files",
+                            systemImage: "arrow.triangle.2.circlepath.circle.fill"
+                        )
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .controlSize(.large)
+                    .disabled(!model.canPatch)
+
+                    Button {
+                        focusedField = nil
+                        Task { await model.refreshPatches() }
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .disabled(model.isBusy)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!model.canInstall)
 
                 if model.isBusy {
-                    Button("Cancel installation", role: .destructive) {
-                        model.cancelInstall()
+                    Button("Cancel operation", role: .destructive) {
+                        model.cancelOperation()
                     }
                     .frame(maxWidth: .infinity)
                 }
+
+                Text("Patch backs up every existing destination file before replacing it. New files are tracked so Unpatch can remove them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -284,6 +304,37 @@ struct ContentView: View {
                     )
                 }
                 .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private var activePatchesCard: some View {
+        CardView(
+            title: "ACTIVE PATCHES (\(model.activePatches.count))",
+            symbol: "archivebox.fill"
+        ) {
+            if model.activePatches.isEmpty {
+                Label(
+                    "No active patches.",
+                    systemImage: "checkmark.circle"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(model.activePatches) { patch in
+                        PatchRow(
+                            patch: patch,
+                            disabled: model.isBusy,
+                            onUnpatch: {
+                                Task {
+                                    await model.unpatch(patch)
+                                }
+                            }
+                        )
+                    }
+                }
             }
         }
     }
@@ -440,5 +491,90 @@ private struct StatusCount: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+
+private struct PatchRow: View {
+    let patch: PatchRecord
+    let disabled: Bool
+    let onUnpatch: () -> Void
+
+    private var dateText: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: patch.createdAt)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "shippingbox.fill")
+                    .foregroundStyle(.blue)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(URL(fileURLWithPath: patch.sourcePath).lastPathComponent)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+
+                    Text("\(patch.fileCount) file(s) • \(dateText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Text(patch.destinationPath)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 0)
+
+                Button("Unpatch", role: .destructive, action: onUnpatch)
+                    .buttonStyle(.bordered)
+                    .disabled(disabled)
+            }
+
+            DisclosureGroup("Patched files") {
+                LazyVStack(alignment: .leading, spacing: 5) {
+                    ForEach(
+                        patch.files,
+                        id: \.relativePath
+                    ) { file in
+                        HStack(alignment: .top, spacing: 7) {
+                            Image(systemName: "doc.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+
+                            Text(file.relativePath)
+                                .font(.caption2.monospaced())
+                                .textSelection(.enabled)
+
+                            Spacer(minLength: 0)
+
+                            Image(
+                                systemName: file.existedBefore
+                                    ? "arrow.triangle.2.circlepath"
+                                    : "plus.circle"
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(
+                                file.existedBefore ? .orange : .green
+                            )
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
+            .font(.caption)
+        }
+        .padding(12)
+        .background(
+            Color(uiColor: .tertiarySystemGroupedBackground),
+            in: RoundedRectangle(
+                cornerRadius: 12,
+                style: .continuous
+            )
+        )
     }
 }
