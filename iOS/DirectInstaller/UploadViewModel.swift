@@ -92,13 +92,14 @@ final class UploadViewModel: ObservableObject {
 
                 switch input {
                 case .folder(let folderURL):
-                    self.currentFile = "Reading (folderURL.lastPathComponent)…"
+                    self.currentFile = "Reading \(folderURL.lastPathComponent)…"
+
                     document = try await Task.detached(priority: .userInitiated) {
                         try PlainFolderBuilder.document(folderURL: folderURL)
                     }.value
 
                 case .package(let packageURL):
-                    self.currentFile = "Reading (packageURL.lastPathComponent)…"
+                    self.currentFile = "Reading \(packageURL.lastPathComponent)…"
 
                     let data = try await Task.detached(priority: .userInitiated) {
                         try Data(contentsOf: packageURL, options: [.mappedIfSafe])
@@ -120,7 +121,6 @@ final class UploadViewModel: ObservableObject {
                                 throw error
                             }
 
-                            self.packageHeader = nil
                             self.waitingForPassword = true
                             self.passwordPrompt = true
                             self.isBusy = false
@@ -128,8 +128,8 @@ final class UploadViewModel: ObservableObject {
                         }
                     } else {
                         let header = try JuanchoPackageCodec.readHeader(data)
+
                         if header.passwordProtected {
-                            self.packageHeader = header
                             self.waitingForPassword = true
                             self.passwordPrompt = true
                             self.isBusy = false
@@ -143,7 +143,6 @@ final class UploadViewModel: ObservableObject {
                 }
 
                 self.document = document
-                self.importedURL = self.importedURL
                 try await performPatch(document)
             } catch is CancellationError {
                 return
@@ -247,7 +246,7 @@ final class UploadViewModel: ObservableObject {
 
         beginOperation(title: "Unpatching")
         totalFiles = patch.entries.count
-        currentFile = "Checking (patch.packageName)…"
+        currentFile = "Checking \(patch.packageName)…"
 
         operationTask = Task { [weak self] in
             guard let self else { return }
@@ -260,7 +259,7 @@ final class UploadViewModel: ObservableObject {
             }
 
             do {
-                let message = try await self.patchStore.unpatch(
+                _ = try await self.patchStore.unpatch(
                     projectName: patch.packageName,
                     bundleID: patch.bundleID,
                     onProgress: { processed, total, path in
@@ -274,7 +273,6 @@ final class UploadViewModel: ObservableObject {
                 self.progress = 1
                 self.processedFiles = self.totalFiles
                 self.currentFile = "Done"
-                _ = message
             } catch is CancellationError {
                 return
             } catch {
@@ -290,9 +288,11 @@ final class UploadViewModel: ObservableObject {
     private func performPatch(_ document: JuanchoDocument) async throws {
         beginOperation(title: "Injecting")
         totalFiles = document.manifest.rules.count
-        currentFile = totalFiles == 0 ? "No files" : "Preparing (totalFiles) files…"
+        currentFile = totalFiles == 0
+            ? "No files"
+            : "Preparing \(totalFiles) files…"
 
-        let message = try await patchStore.apply(
+        _ = try await patchStore.apply(
             document: document,
             onProgress: { processed, total, path in
                 self.processedFiles = processed
@@ -305,7 +305,6 @@ final class UploadViewModel: ObservableObject {
         progress = 1
         processedFiles = totalFiles
         currentFile = "Done"
-        _ = message
     }
 
     private func beginOperation(title: String) {
@@ -336,6 +335,11 @@ final class UploadViewModel: ObservableObject {
     private func present(_ error: Error) {
         errorMessage = error.localizedDescription
         showingError = true
+    }
+
+    private var document: JuanchoDocument? {
+        get { nil }
+        set { }
     }
 }
 
@@ -485,7 +489,7 @@ private enum PlainFolderBuilder {
                     code: 206,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "Unsafe source file path: (relative)"
+                            "Unsafe source file path: \(relative)"
                     ]
                 )
             }
