@@ -475,6 +475,20 @@ actor PatchManager {
             }
         }
 
+        // Verify actual write access before patching. A directory can exist
+        // while the process still lacks permission to modify its contents.
+        let probe = url.appendingPathComponent(".juancho_write_test_\\(UUID().uuidString)")
+        do {
+            try Data("JUANCHO_WRITE_TEST".utf8).write(to: probe, options: [.atomic])
+            try fileManager.removeItem(at: probe)
+        } catch {
+            try? fileManager.removeItem(at: probe)
+            throw InstallError.destinationCreateFailed(
+                url.path,
+                "The folder exists, but this app cannot write to it: \\(error.localizedDescription)"
+            )
+        }
+
         return url
     }
 
