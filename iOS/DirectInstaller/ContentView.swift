@@ -205,14 +205,14 @@ struct ContentView: View {
                         .padding(.vertical, 2)
                     }
                     .frame(minHeight: 72, maxHeight: 190)
-                    .onChange(of: model.logLines.count) {
+                    .onChange(of: model.logLines.count, perform: { _ in
                         withAnimation(.easeOut(duration: 0.15)) {
                             proxy.scrollTo(
                                 max(0, model.logLines.count - 1),
                                 anchor: .bottom
                             )
                         }
-                    }
+                    })
                 }
             }
         }
