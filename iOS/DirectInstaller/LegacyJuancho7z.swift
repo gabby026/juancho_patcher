@@ -180,21 +180,19 @@ enum LegacyJuanchoCodec {
 
             let data = try Data(contentsOf: extracted, options: [.mappedIfSafe])
             let destination = destinationPath(forArchivePath: archivePath)
+            let relative = relativeSourcePath(forDestination: destination)
 
             guard seenDestinations.insert(destination).inserted else {
                 throw LegacyJuanchoError.extractionFailed(
-                    "Duplicate destination generated for \(destination)."
+                    "Duplicate destination generated for (destination)."
                 )
             }
 
-            let filename = URL(fileURLWithPath: destination).lastPathComponent
+            let filename = URL(fileURLWithPath: relative).lastPathComponent
 
             files.append(
                 JuanchoFile(
-                    path: destination.replacingOccurrences(
-                        of: "\\",
-                        with: "/"
-                    ),
+                    path: relative,
                     data: data
                 )
             )
