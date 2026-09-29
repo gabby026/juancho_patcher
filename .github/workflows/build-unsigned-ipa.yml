@@ -1,4 +1,4 @@
-name: Build Juancho unsigned IPA
+name: Build Juancho patcher IPA
 
 on:
   workflow_dispatch:
@@ -8,34 +8,79 @@ on:
 jobs:
   build:
     runs-on: macos-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show Xcode version
-        run: xcodebuild -version
-
-      - name: Build unsigned app
+      - name: Show Xcode environment
         run: |
-          xcodebuild             -project iOS/Juancho/Juancho.xcodeproj             -scheme Juancho             -sdk iphoneos             -configuration Release             -derivedDataPath build             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -project iOS/Juancho/Juancho.xcodeproj -list
+
+      - name: Build unsigned Juancho app
+        run: |
+          set -euo pipefail
+          rm -rf build "$RUNNER_TEMP/juancho-build"
+          xcodebuild             -project iOS/Juancho/Juancho.xcodeproj             -scheme Juancho             -configuration Release             -sdk iphoneos             -destination 'generic/platform=iOS'             CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/juancho-build"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             DEVELOPMENT_TEAM=""             clean build
+
+          test -d "$RUNNER_TEMP/juancho-build/Juancho.app"
+          test -f "$RUNNER_TEMP/juancho-build/Juancho.app/Juancho"
+
+      - name: Add filesystem entitlements for TrollStore-style deployment
+        run: |
+          set -euo pipefail
+
+          APP="$RUNNER_TEMP/juancho-build/Juancho.app"
+          ENTITLEMENTS="$RUNNER_TEMP/JuanchoEntitlements.plist"
+
+          cat > "$ENTITLEMENTS" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.private.security.no-sandbox</key>
+            <true/>
+            <key>platform-application</key>
+            <true/>
+            <key>com.apple.private.security.storage.AppDataContainers</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
+          /usr/bin/codesign             --force             --deep             --sign -             --entitlements "$ENTITLEMENTS"             "$APP"
+
+          /usr/bin/codesign --verify --deep --strict "$APP"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist"
+
+      - name: Verify Juancho package reader is present
+        run: |
+          set -euo pipefail
+          test -f "iOS/Juancho/Core/JuanchoPackage.swift"
+          grep -q "JUANCHO1" "iOS/Juancho/Core/JuanchoPackage.swift"
+          grep -q "PBKDF2-HMAC-SHA256" "iOS/Juancho/Core/Crypto.swift"
+          grep -q "Load & Patch" "iOS/Juancho/Views/ContentView.swift" || true
+          grep -q "loadPackageFromPath" "iOS/Juancho/Views/ContentView.swift"
+          grep -q "passwordProtected" "iOS/Juancho/Core/JuanchoModel.swift"
 
       - name: Package IPA
         run: |
-          rm -rf Payload Juancho-unsigned.ipa
-          mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/Juancho.app Payload/
-          /usr/bin/zip -qry Juancho-unsigned.ipa Payload
-
-      - name: Validate IPA
-        run: |
-          test -f Juancho-unsigned.ipa
-          unzip -l Juancho-unsigned.ipa | grep -q "Payload/Juancho.app/Info.plist"
-          unzip -l Juancho-unsigned.ipa | grep -q "Payload/Juancho.app/PlugIns/JuanchoShare.appex/Info.plist"
-          unzip -l Juancho-unsigned.ipa | grep -q "Payload/Juancho.app/PlugIns/JuanchoShare.appex/JuanchoShare"
+          set -euo pipefail
+          rm -rf ipa Juancho-Patcher.ipa
+          mkdir -p ipa/Payload
+          cp -R "$RUNNER_TEMP/juancho-build/Juancho.app" ipa/Payload/
+          cd ipa
+          /usr/bin/zip -qry Juancho-Patcher.ipa Payload
+          test -f Juancho-Patcher.ipa
+          unzip -l Juancho-Patcher.ipa | grep -q "Payload/Juancho.app/Info.plist"
+          unzip -l Juancho-Patcher.ipa | grep -q "Payload/Juancho.app/Juancho"
+          unzip -l Juancho-Patcher.ipa | grep -q "Payload/Juancho.app/PlugIns/JuanchoShare.appex/JuanchoShare"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Juancho-unsigned-ipa
-          path: Juancho-unsigned.ipa
+          name: Juancho-Patcher-IPA
+          path: ipa/Juancho-Patcher.ipa
           if-no-files-found: error
