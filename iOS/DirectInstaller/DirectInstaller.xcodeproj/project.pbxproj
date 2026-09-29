@@ -26,6 +26,7 @@
 /* End XCSwiftPackageProductDependency section */
 
 /* Begin PBXBuildFile section */
+		A10100000000000000000010 = {isa = PBXBuildFile; fileRef = A20100000000000000000011; };
 		A10100000000000000000001 = {isa = PBXBuildFile; fileRef = A20100000000000000000001; };
 		A10100000000000000000002 = {isa = PBXBuildFile; fileRef = A20100000000000000000002; };
 		A10100000000000000000003 = {isa = PBXBuildFile; fileRef = A20100000000000000000003; };
@@ -38,6 +39,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A20100000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyJuancho7z.swift; sourceTree = "<group>"; };
 		A20100000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainUploaderApp.swift; sourceTree = "<group>"; };
 		A20100000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A20100000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadViewModel.swift; sourceTree = "<group>"; };
@@ -82,6 +84,7 @@
 				A20100000000000000000008,
 				A20100000000000000000009,
 				A20100000000000000000010,
+				A20100000000000000000011,
 			);
 			sourceTree = "<group>";
 		};
@@ -173,6 +176,7 @@
 				A10100000000000000000007,
 				A10100000000000000000008,
 				A10100000000000000000009,
+				A10100000000000000000010,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
