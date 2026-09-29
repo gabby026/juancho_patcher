@@ -20,6 +20,8 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             Form {
+                packagePathSection
+
                 Section("Packages") {
                     Button {
                         importer = true
@@ -58,7 +60,7 @@ struct ContentView: View {
                         LabeledContent("Files", value: "\(doc.manifest.rules.count)")
                         LabeledContent("Password", value: doc.header.passwordProtected ? "Yes" : "No")
                     } else {
-                        Text("Upload or select a .juancho package.")
+                        Text("Enter a package path, upload a package, or select a stored package.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -142,7 +144,7 @@ struct ContentView: View {
                     set: { showing in
                         if !showing {
                             model.errorMessage = nil
-                            model.passwordPrompt = false
+                            model.cancelPasswordPrompt()
                         }
                     }
                 )
@@ -151,7 +153,7 @@ struct ContentView: View {
                     SecureField("Password", text: $model.password)
                     Button("Unlock") { model.unlock() }
                     Button("Cancel", role: .cancel) {
-                        model.passwordPrompt = false
+                        model.cancelPasswordPrompt()
                     }
                 } else {
                     Button("OK") { model.errorMessage = nil }
@@ -161,6 +163,44 @@ struct ContentView: View {
                      ? "Enter the package password."
                      : (model.errorMessage ?? ""))
             }
+        }
+    }
+
+    private var packagePathSection: some View {
+        Section("Package path") {
+            TextField(
+                "/var/mobile/Documents/MyPatch.juancho or /var/mobile/Documents/MyPatch",
+                text: $model.packagePath,
+                axis: .vertical
+            )
+            .textFieldStyle(.roundedBorder)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .lineLimit(2...5)
+
+            HStack(spacing: 10) {
+                Button {
+                    model.loadPackageFromPath()
+                } label: {
+                    Label("Load", systemImage: "arrow.down.doc")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.isBusy)
+
+                Button {
+                    model.loadPackageFromPath(autoPatch: true)
+                } label: {
+                    Label("Load & Patch", systemImage: "wrench.and.screwdriver.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.isBusy)
+            }
+
+            Text("Give the exact .juancho path, or a folder containing exactly one .juancho package. Load & Patch decompresses it and immediately runs the existing backup/copy/hash-verification patch flow.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }
