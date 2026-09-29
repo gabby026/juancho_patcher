@@ -14,6 +14,7 @@ final class UploadViewModel: ObservableObject {
     }
 
     @Published private(set) var activePatches: [PatchRecord] = []
+    @Published private(set) var document: JuanchoDocument?
     @Published private(set) var isBusy = false
     @Published private(set) var operationTitle = ""
     @Published private(set) var currentFile = ""
@@ -337,10 +338,6 @@ final class UploadViewModel: ObservableObject {
         showingError = true
     }
 
-    private var document: JuanchoDocument? {
-        get { nil }
-        set { }
-    }
 }
 
 private enum SourceInput: Sendable {
