@@ -474,7 +474,7 @@ private enum PlainFolderBuilder {
             }
 
             let relative = String(resolved.path.dropFirst(prefix.count))
-                .replacingOccurrences(of: "\", with: "/")
+                .replacingOccurrences(of: "\\", with: "/")
                 .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
 
             guard !relative.isEmpty,
