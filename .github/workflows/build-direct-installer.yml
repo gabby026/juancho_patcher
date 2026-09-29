@@ -1,0 +1,57 @@
+name: Build Direct Juancho Installer IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode environment
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -project iOS/DirectInstaller/DirectInstaller.xcodeproj -list
+
+      - name: Build unsigned app
+        run: |
+          set -euo pipefail
+          rm -rf build
+          xcodebuild             -project iOS/DirectInstaller/DirectInstaller.xcodeproj             -scheme DirectInstaller             -configuration Release             -sdk iphoneos             -destination 'generic/platform=iOS'             CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/build"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             DEVELOPMENT_TEAM=""             clean build
+          test -d "$RUNNER_TEMP/build/DirectInstaller.app"
+          test -f "$RUNNER_TEMP/build/DirectInstaller.app/DirectInstaller"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$RUNNER_TEMP/build/DirectInstaller.app/Info.plist"
+
+      - name: Add TrollStore filesystem entitlements
+        run: |
+          set -euo pipefail
+          ENTITLEMENTS="$RUNNER_TEMP/FilzaEntitlements.plist"
+          /usr/bin/plutil -create xml1 "$ENTITLEMENTS"
+          /usr/libexec/PlistBuddy -c "Add :com.apple.private.security.no-sandbox bool true" "$ENTITLEMENTS"
+          /usr/libexec/PlistBuddy -c "Add :platform-application bool true" "$ENTITLEMENTS"
+          /usr/libexec/PlistBuddy -c "Add :com.apple.private.security.storage.AppDataContainers bool true" "$ENTITLEMENTS"
+          /usr/bin/codesign --force --sign - --entitlements "$ENTITLEMENTS" "$RUNNER_TEMP/build/DirectInstaller.app"
+          /usr/bin/codesign -d --entitlements :- "$RUNNER_TEMP/build/DirectInstaller.app"
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          rm -rf ipa
+          mkdir -p ipa/Payload
+          cp -R "$RUNNER_TEMP/build/DirectInstaller.app" ipa/Payload/
+          cd ipa
+          /usr/bin/zip -qry Juancho-Installer-Filza.ipa Payload
+          test -f Juancho-Installer-Filza.ipa
+          unzip -l Juancho-Installer-Filza.ipa | grep -E 'Payload/DirectInstaller.app/(Info.plist|DirectInstaller)$'
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Juancho-Installer-Filza-IPA
+          path: ipa/Juancho-Installer-Filza.ipa
+          if-no-files-found: error
