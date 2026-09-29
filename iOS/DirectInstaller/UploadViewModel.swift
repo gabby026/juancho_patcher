@@ -255,7 +255,7 @@ final class UploadViewModel: ObservableObject {
         appendLog("Patch requested. Reading package: (url.path)")
         appendLog("Package: (header.projectName)")
         appendLog("Bundle ID: (header.targetBundleID)")
-        appendLog("Password: (header.passwordProtected ? "required" : "none")")
+        appendLog("Password: \(header.passwordProtected ? "required" : "none")")
 
         if !header.passwordProtected {
             document = try JuanchoPackageCodec.decode(data)
