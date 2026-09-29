@@ -5,6 +5,26 @@
 	objectVersion = 56;
 	objects = {
 
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A90000000000000000000001 = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/OlehKulykov/PLzmaSDK.git";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A91000000000000000000001 = {
+			isa = XCSwiftPackageProductDependency;
+			package = A90000000000000000000001;
+			productName = PLzmaSDK;
+		};
+/* End XCSwiftPackageProductDependency section */
+
 /* Begin PBXBuildFile section */
 		A10100000000000000000001 = {isa = PBXBuildFile; fileRef = A20100000000000000000001; };
 		A10100000000000000000002 = {isa = PBXBuildFile; fileRef = A20100000000000000000002; };
@@ -90,6 +110,9 @@
 			productName = DirectInstaller;
 			productReference = A20200000000000000000001;
 			productType = "com.apple.product-type.application";
+			packageProductDependencies = (
+				A91000000000000000000001,
+			);
 		};
 /* End PBXNativeTarget section */
 
@@ -118,6 +141,9 @@
 			productRefGroup = A40100000000000000000003;
 			projectDirPath = "";
 			projectRoot = "";
+			packageReferences = (
+				A90000000000000000000001,
+			);
 			targets = (
 				A50100000000000000000001,
 			);
