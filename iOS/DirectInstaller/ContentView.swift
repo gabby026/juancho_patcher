@@ -10,8 +10,8 @@ struct ContentView: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         sourceCard
-                        activityCard
                         activePatches
+                        activityCard
                     }
                     .padding()
                 }
@@ -389,31 +389,72 @@ private struct PatchRow: View {
     let patch: PatchRecord
     let disabled: Bool
     let onUnpatch: () -> Void
+    @State private var isExpanded = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(patch.packageName)
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(1)
-
-                Text("\(patch.entries.count) file\(patch.entries.count == 1 ? "" : "s")")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 12)
-
-            Button("Unpatch", action: onUnpatch)
-                .font(.footnote.weight(.semibold))
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
                 .buttonStyle(.plain)
-                .foregroundStyle(.red)
-                .disabled(disabled)
+                .foregroundStyle(.secondary)
+
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(patch.packageName)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+
+                    Text("\(patch.entries.count) file\(patch.entries.count == 1 ? "" : "s")")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 12)
+
+                Button("Unpatch", action: onUnpatch)
+                    .font(.footnote.weight(.semibold))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.red)
+                    .disabled(disabled)
+            }
+            .padding(.vertical, 8)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(patch.entries.indices, id: \.self) { index in
+                        let entry = patch.entries[index]
+
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: entry.addedByPatch ? "plus.circle.fill" : "arrow.triangle.2.circlepath")
+                                .font(.caption2)
+                                .foregroundStyle(entry.addedByPatch ? .green : .orange)
+
+                            Text(entry.destination)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .textSelection(.enabled)
+
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+                .padding(.leading, 34)
+                .padding(.bottom, 10)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
-        .padding(.vertical, 8)
         .contentShape(Rectangle())
     }
 }
