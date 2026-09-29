@@ -190,9 +190,9 @@ internal sealed class MainForm : Form
                     Operation = "replace",
                     ContainerKind = "data",
                     BundleID = targetBundle,
-                    RelativePath = string.IsNullOrEmpty(base)
+                    RelativePath = string.IsNullOrEmpty(basePathNormalized)
                         ? file.RelativePath
-                        : base + "/" + file.RelativePath,
+                        : basePathNormalized + "/" + file.RelativePath,
                     ReplacementFilename = Path.GetFileName(file.FullPath),
                     Size = data.LongLength,
                     SHA256 = Sha256(data),
