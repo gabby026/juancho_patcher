@@ -501,7 +501,7 @@ private enum TargetPathResolver {
 
         return TargetPathInfo(
             containerPath: container.url.path,
-            assetsPath: assets.deletingLastPathComponent().path
+            assetsPath: assets.path
         )
     }
 }
