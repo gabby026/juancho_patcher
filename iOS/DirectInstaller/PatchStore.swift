@@ -260,6 +260,7 @@ final class PatchStore: ObservableObject {
                 try backup.write(
                     to: dest,
                     options: .atomic
+                )
 
                 restored += 1
             } else if entry.addedByPatch {
