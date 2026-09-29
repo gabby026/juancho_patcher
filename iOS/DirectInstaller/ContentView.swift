@@ -2,12 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var model = UploadViewModel()
-    @FocusState private var focusedField: Field?
-
-    private enum Field {
-        case destination
-        case source
-    }
+    @FocusState private var focusedField: Bool
 
     var body: some View {
         ZStack {
@@ -15,9 +10,11 @@ struct ContentView: View {
                 ScrollView {
                     VStack(spacing: 18) {
                         header
-                        destinationCard
-                        folderCard
-                        progressCard
+                        packageSourceCard
+                        packageInfoCard
+                        targetCard
+                        patchCard
+                        activePatchesCard
                         logCard
                     }
                     .padding()
@@ -28,11 +25,24 @@ struct ContentView: View {
                 .toolbar {
                     ToolbarItemGroup(placement: .keyboard) {
                         Spacer()
-                        Button("Done") { focusedField = nil }
+                        Button("Done") { focusedField = false }
                     }
                 }
-                .alert("Installation error", isPresented: $model.showingError) {
-                    Button("OK", role: .cancel) {}
+                .alert("Package Password", isPresented: $model.passwordPrompt) {
+                    SecureField("Password", text: $model.password)
+                    Button("Patch") { model.unlockAndPatch() }
+                    Button("Cancel", role: .cancel) { model.cancelPasswordPrompt() }
+                } message: {
+                    Text(
+                        model.passwordError.isEmpty
+                            ? "This .juancho package is protected. Enter the password to continue."
+                            : model.passwordError
+                    )
+                }
+                .alert("Juancho", isPresented: $model.showingError) {
+                    Button("OK", role: .cancel) {
+                        model.showingError = false
+                    }
                 } message: {
                     Text(model.errorMessage)
                 }
@@ -78,7 +88,6 @@ struct ContentView: View {
             Image(systemName: "shippingbox.fill")
                 .font(.system(size: 54))
                 .foregroundStyle(.blue)
-                .accessibilityLabel("Juancho Installer")
 
             Label(
                 model.isOfficialBuild
@@ -91,282 +100,285 @@ struct ContentView: View {
             .font(.caption.weight(.semibold))
             .foregroundStyle(model.isOfficialBuild ? .green : .red)
 
-            HStack(spacing: 18) {
-                Link(
-                    destination: URL(
-                        string: "https://www.youtube.com/@Juancho_ios.script"
-                    )!
-                ) {
-                    HStack(spacing: 6) {
-                        YouTubeIcon()
-                        Text("Juancho_ios")
-                    }
-                }
+            Text("JUANCHO package patcher")
+                .font(.headline)
 
-                Link(
-                    destination: URL(
-                        string: "https://t.me/JuAnChO_scriptios"
-                    )!
-                ) {
-                    HStack(spacing: 6) {
-                        TelegramIcon()
-                        Text("Juancho_ios")
-                    }
-                }
-            }
-            .font(.caption.weight(.semibold))
-            .buttonStyle(.plain)
-
-            Text("© 2026 Juancho Installer. All rights reserved.")
-                .font(.caption2)
+            Text("The package controls the target Bundle ID and destination paths.")
+                .font(.caption)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
     }
 
-    private var destinationCard: some View {
-        CardView(title: "INSTALL LOCATION", symbol: "folder.badge.gearshape") {
+    private var packageSourceCard: some View {
+        CardView(title: "SOURCE .JUANCHO", symbol: "archivebox.fill") {
             VStack(spacing: 14) {
-                LabeledTextField(
-                    title: "Destination folder path",
-                    placeholder: "/var/mobile/Containers/.../assets",
-                    text: $model.destinationPath,
-                    axis: .vertical
-                )
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .lineLimit(2...5)
-                .focused($focusedField, equals: .destination)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Package file or folder containing one .juancho")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
-                Button {
-                    focusedField = nil
-                    Task { await model.testDestinationPath() }
-                } label: {
-                    Label(
-                        model.isCheckingDestination
-                            ? "Checking…"
-                            : (model.destinationSucceeded
-                                ? "Folder ready"
-                                : "Check folder"),
-                        systemImage: model.destinationSucceeded
-                            ? "checkmark.circle.fill"
-                            : "folder.badge.checkmark"
+                    TextField(
+                        "/var/mobile/Documents/MyPatch.juancho",
+                        text: $model.sourcePath,
+                        axis: .vertical
                     )
-                    .frame(maxWidth: .infinity)
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .lineLimit(2...5)
+                    .focused($focusedField)
                 }
-                .buttonStyle(.bordered)
-                .tint(
-                    model.destinationSucceeded ? .green : .blue
-                )
-                .disabled(
-                    model.isBusy
-                    || model.isCheckingDestination
-                    || model.destinationSucceeded
-                )
 
-                if !model.destinationStatus.isEmpty {
-                    Label(
-                        model.destinationStatus,
-                        systemImage: model.destinationSucceeded
-                            ? "checkmark.circle.fill"
-                            : "exclamationmark.triangle.fill"
+                HStack(spacing: 10) {
+                    Button {
+                        focusedField = false
+                        model.loadPackage()
+                    } label: {
+                        Label("Read .juancho", systemImage: "doc.text.magnifyingglass")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        focusedField = false
+                        model.patchFiles()
+                    } label: {
+                        Label(
+                            model.isBusy ? "Patching…" : "Patch Files",
+                            systemImage: "arrow.triangle.2.circlepath.circle.fill"
+                        )
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!model.canPatch)
+                }
+
+                Text(
+                    "Patch Files also reads the package automatically. You do not need to extract the .juancho first."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var packageInfoCard: some View {
+        if let header = model.packageHeader {
+            CardView(title: "PACKAGE", symbol: "shippingbox") {
+                VStack(alignment: .leading, spacing: 9) {
+                    InfoLine(title: "Project", value: header.projectName)
+                    InfoLine(title: "Bundle ID", value: header.targetBundleID)
+                    InfoLine(
+                        title: "Base path",
+                        value: header.basePath.isEmpty ? "/" : header.basePath
                     )
-                    .font(.footnote)
-                    .foregroundStyle(
-                        model.destinationSucceeded ? .green : .orange
+                    InfoLine(
+                        title: "Password",
+                        value: header.passwordProtected ? "Required when Patch is pressed" : "None"
                     )
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    InfoLine(
+                        title: "Files",
+                        value: model.document.map { "\($0.manifest.rules.count)" } ?? "Protected — enter password on Patch"
+                    )
                 }
             }
         }
     }
 
-    private var folderCard: some View {
-        CardView(title: "SOURCE FOLDER", symbol: "folder") {
-            VStack(spacing: 14) {
-                LabeledTextField(
-                    title: "Source folder path",
-                    placeholder: "/var/mobile/Documents/MyFolder",
-                    text: $model.sourcePath,
-                    axis: .vertical
-                )
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .lineLimit(2...5)
-                .focused($focusedField, equals: .source)
+    @ViewBuilder
+    private var targetCard: some View {
+        if let targetStatus = model.targetStatus, let header = model.packageHeader {
+            CardView(title: "AUTOMATIC TARGET", symbol: "scope") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Bundle ID")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(header.targetBundleID)
+                        .font(.footnote.monospaced())
+                        .textSelection(.enabled)
 
-                Button {
-                    focusedField = nil
-                    Task { await model.testSourcePath() }
-                } label: {
-                    Label(
-                        model.isScanning ? "Scanning…" : "Scan source",
-                        systemImage: "magnifyingglass"
-                    )
-                    .frame(maxWidth: .infinity)
+                    Text(targetStatus)
+                        .font(.footnote)
+                        .foregroundStyle(model.targetReady ? .green : .orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.bordered)
-                .disabled(model.isBusy || model.isScanning)
+            }
+        }
+    }
 
-                if !model.sourceStatus.isEmpty {
-                    Label(
-                        model.sourceStatus,
-                        systemImage: model.sourceSucceeded
-                            ? "checkmark.circle.fill"
-                            : "exclamationmark.triangle.fill"
-                    )
+    private var patchCard: some View {
+        CardView(title: "PATCH OPERATION", symbol: "hammer.fill") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("When Patch Files is pressed, Juancho reads the manifest and copies each replacement to its manifest path inside the application container.")
                     .font(.footnote)
-                    .foregroundStyle(
-                        model.sourceSucceeded ? .green : .orange
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
 
-                Button {
-                    focusedField = nil
-                    Task { await model.installSourcePath() }
-                } label: {
-                    Label(
-                        model.isBusy ? "Installing…" : "Install files",
-                        systemImage: "arrow.down.circle.fill"
-                    )
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!model.canInstall)
+                Text("Existing files are backed up before replacement. Files that did not exist before the patch are tracked so Unpatch can remove them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 if model.isBusy {
-                    Button("Cancel installation", role: .destructive) {
-                        model.cancelInstall()
-                    }
-                    .frame(maxWidth: .infinity)
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
                 }
             }
         }
     }
 
-    private var progressCard: some View {
-        CardView(title: "Progress", symbol: "chart.bar.fill") {
-            VStack(spacing: 10) {
-                ProgressView(value: model.progress)
-                    .tint(
-                        model.installCompleted && model.failedCount == 0
-                            ? .green
-                            : .blue
-                    )
-
-                HStack {
-                    Text(model.progressText)
-                        .font(.subheadline.monospacedDigit())
-                    Spacer()
-                    Text("\(Int(model.progress * 100))%")
-                        .font(.subheadline.monospacedDigit().bold())
+    private var activePatchesCard: some View {
+        CardView(
+            title: "ACTIVE PATCHES (\(model.activePatches.count))",
+            symbol: "checkmark.shield.fill"
+        ) {
+            if model.activePatches.isEmpty {
+                Label(
+                    "No active patches.",
+                    systemImage: "checkmark.circle"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(
+                        model.activePatches,
+                        id: \.id
+                    ) { patch in
+                        PatchRow(
+                            patch: patch,
+                            disabled: model.isBusy
+                        ) {
+                            Task { await model.unpatch(patch) }
+                        }
+                    }
                 }
-
-                HStack(spacing: 18) {
-                    StatusCount(
-                        label: "Installed",
-                        value: model.successCount,
-                        color: .green
-                    )
-                    StatusCount(
-                        label: "Failed",
-                        value: model.failedCount,
-                        color: .red
-                    )
-                    StatusCount(
-                        label: "Total",
-                        value: model.totalFiles,
-                        color: .blue
-                    )
-                }
-                .frame(maxWidth: .infinity)
             }
         }
     }
 
     private var logCard: some View {
-        CardView(title: "Activity", symbol: "text.alignleft") {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
-                        if model.logLines.isEmpty {
-                            Text("Ready.")
-                        } else {
-                            ForEach(
-                                Array(model.logLines.enumerated()),
-                                id: \.offset
-                            ) { _, line in
-                                Text(line)
-                            }
+        CardView(title: "ACTIVITY", symbol: "text.alignleft") {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 5) {
+                    if model.logLines.isEmpty {
+                        Text("Ready.")
+                    } else {
+                        ForEach(
+                            Array(model.logLines.enumerated()),
+                            id: \.offset
+                        ) { _, line in
+                            Text(line)
                         }
-
-                        Color.clear
-                            .frame(height: 1)
-                            .id("activity-bottom")
-                    }
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .frame(
-                        maxWidth: .infinity,
-                        alignment: .leading
-                    )
-                    .textSelection(.enabled)
-                }
-                .onChange(of: model.logLines.count) { _ in
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        proxy.scrollTo(
-                            "activity-bottom",
-                            anchor: .bottom
-                        )
                     }
                 }
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
             }
-            .frame(minHeight: 100, maxHeight: 220)
+            .frame(minHeight: 100, maxHeight: 240)
         }
     }
 }
 
-private struct YouTubeIcon: View {
+private struct InfoLine: View {
+    let title: String
+    let value: String
+
     var body: some View {
-        ZStack {
-            RoundedRectangle(
-                cornerRadius: 4,
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.footnote.monospaced())
+                .textSelection(.enabled)
+        }
+    }
+}
+
+private struct PatchRow: View {
+    let patch: PatchRecord
+    let disabled: Bool
+    let onUnpatch: () -> Void
+
+    private var dateText: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: patch.appliedAt)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "archivebox.fill")
+                    .foregroundStyle(.blue)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(patch.packageName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+
+                    Text("\(patch.entries.count) file(s) • \(dateText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Text(patch.bundleID)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+
+                Button("Unpatch", role: .destructive, action: onUnpatch)
+                    .buttonStyle(.bordered)
+                    .disabled(disabled)
+            }
+
+            DisclosureGroup("Patched files") {
+                LazyVStack(alignment: .leading, spacing: 5) {
+                    ForEach(
+                        patch.entries.indices,
+                        id: \.self
+                    ) { index in
+                        let entry = patch.entries[index]
+
+                        HStack(alignment: .top, spacing: 7) {
+                            Image(
+                                systemName: entry.addedByPatch
+                                    ? "plus.circle"
+                                    : "arrow.triangle.2.circlepath"
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(
+                                entry.addedByPatch ? .green : .orange
+                            )
+
+                            Text(entry.destination)
+                                .font(.caption2.monospaced())
+                                .textSelection(.enabled)
+
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
+            .font(.caption)
+        }
+        .padding(12)
+        .background(
+            Color(uiColor: .tertiarySystemGroupedBackground),
+            in: RoundedRectangle(
+                cornerRadius: 12,
                 style: .continuous
             )
-            .fill(Color.red)
-            .frame(width: 22, height: 16)
-
-            Image(systemName: "play.fill")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.white)
-        }
-        .accessibilityHidden(true)
-    }
-}
-
-private struct TelegramIcon: View {
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    Color(
-                        red: 0.15,
-                        green: 0.63,
-                        blue: 0.89
-                    )
-                )
-                .frame(width: 18, height: 18)
-
-            Image(systemName: "paperplane.fill")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.white)
-                .offset(x: -0.5, y: 0.5)
-        }
-        .accessibilityHidden(true)
+        )
     }
 }
 
@@ -400,45 +412,5 @@ private struct CardView<Content: View>: View {
                 style: .continuous
             )
         )
-    }
-}
-
-private struct LabeledTextField: View {
-    let title: String
-    let placeholder: String
-    @Binding var text: String
-    var axis: Axis = .horizontal
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            TextField(
-                placeholder,
-                text: $text,
-                axis: axis
-            )
-            .textFieldStyle(.roundedBorder)
-        }
-    }
-}
-
-private struct StatusCount: View {
-    let label: String
-    let value: Int
-    let color: Color
-
-    var body: some View {
-        VStack(spacing: 3) {
-            Text("\(value)")
-                .font(.headline.monospacedDigit())
-                .foregroundStyle(color)
-
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
     }
 }

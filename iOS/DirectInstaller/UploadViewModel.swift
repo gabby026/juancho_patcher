@@ -3,269 +3,410 @@ import Foundation
 
 @MainActor
 final class UploadViewModel: ObservableObject {
-    @Published var destinationPath: String {
-        didSet {
-            UserDefaults.standard.set(destinationPath, forKey: Keys.destinationPath)
-            if oldValue != destinationPath {
-                destinationSucceeded = false
-                destinationStatus = ""
-            }
-        }
-    }
-
     @Published var sourcePath: String {
         didSet {
             UserDefaults.standard.set(sourcePath, forKey: Keys.sourcePath)
             if oldValue != sourcePath {
-                sourceSucceeded = false
-                sourceStatus = ""
+                clearLoadedPackage()
             }
         }
     }
 
+    @Published private(set) var packageHeader: JuanchoPackageHeader?
+    @Published private(set) var document: JuanchoDocument?
+    @Published private(set) var activePatches: [PatchRecord] = []
+    @Published private(set) var targetStatus: String?
+    @Published private(set) var targetReady = false
     @Published private(set) var isBusy = false
-    @Published private(set) var isScanning = false
-    @Published private(set) var isCheckingDestination = false
-    @Published private(set) var progress = 0.0
-    @Published private(set) var totalFiles = 0
-    @Published private(set) var processedFiles = 0
-    @Published private(set) var successCount = 0
-    @Published private(set) var failedCount = 0
-    @Published private(set) var installCompleted = false
-    @Published private(set) var logLines: [String] = []
     @Published var showingError = false
     @Published var errorMessage = ""
-    @Published private(set) var destinationStatus = ""
-    @Published private(set) var destinationSucceeded = false
-    @Published private(set) var sourceStatus = ""
-    @Published private(set) var sourceSucceeded = false
+    @Published var passwordPrompt = false
+    @Published var password = ""
+    @Published var passwordError = ""
+    @Published private(set) var logLines: [String] = []
     @Published private(set) var isOfficialBuild = true
 
-    private var installTask: Task<Void, Never>?
+    private let patchStore = PatchStore()
+    private var importedData: Data?
+    private var importedURL: URL?
+    private var waitingForPassword = false
+    private var operationTask: Task<Void, Never>?
 
     private enum Keys {
-        static let destinationPath = "destinationPath"
         static let sourcePath = "sourcePath"
     }
 
     init() {
-        destinationPath = UserDefaults.standard.string(forKey: Keys.destinationPath)
-            ?? "/var/mobile/Containers/Data/Application/98A6EB7C-2C40-4D27-B1A0-D28DBEA784E1/Documents/dragon2017/assets"
         sourcePath = UserDefaults.standard.string(forKey: Keys.sourcePath) ?? ""
         isOfficialBuild = Bundle.main.bundleIdentifier == "com.Juancho.Installer"
+        refreshPatches()
     }
 
-    var canInstall: Bool {
+    var canPatch: Bool {
         !sourcePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !destinationPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !isBusy
-            && !isScanning
-            && !isCheckingDestination
             && isOfficialBuild
     }
 
-    var progressText: String {
-        guard totalFiles > 0 else { return "0 of 0 files" }
-        return "\(processedFiles) of \(totalFiles) files"
-    }
-
-    var logText: String {
-        logLines.joined(separator: "\n")
-    }
-
-    func testSourcePath() async {
-        guard !isScanning else { return }
-
-        isScanning = true
-        sourceStatus = ""
-        defer { isScanning = false }
-
+    func loadPackage() {
         do {
-            let folderURL = try sourceFolderURL()
-            appendLog("Scanning source folder: \(folderURL.path)")
+            let url = try resolveJuanchoURL()
+            let data = try Data(contentsOf: url)
+            let header = try JuanchoPackageCodec.readHeader(data)
 
-            let files = try await Task.detached(priority: .userInitiated) {
-                try FileScanner.scan(folderURL: folderURL)
-            }.value
+            importedData = data
+            importedURL = url
+            packageHeader = header
+            password = ""
+            passwordError = ""
+            waitingForPassword = false
+            targetReady = false
+            targetStatus = nil
+            appendLog("Read package: (url.path)")
+            appendLog("Project: (header.projectName)")
+            appendLog("Bundle ID: (header.targetBundleID)")
+            appendLog("Base path: (header.basePath.isEmpty ? "/" : header.basePath)")
 
-            guard !files.isEmpty else {
-                throw InstallError.noSourceFiles(folderURL.path)
+            if header.passwordProtected {
+                document = nil
+                appendLog("Package is password protected. Password will be requested only when Patch Files is pressed.")
+            } else {
+                document = try JuanchoPackageCodec.decode(data)
+                appendLog("Package decoded: (document?.manifest.rules.count ?? 0) replacement file(s).")
             }
 
-            sourceSucceeded = true
-            sourceStatus = "Scanned: \(files.count) file(s) found."
-            appendLog("Source folder is readable: \(folderURL.path)")
+            checkTarget()
         } catch {
-            sourceSucceeded = false
-            sourceStatus = error.localizedDescription
-            appendLog("Source scan failed: \(error.localizedDescription)")
+            clearLoadedPackage()
+            present(error)
         }
     }
 
-    func testDestinationPath() async {
-        guard !isCheckingDestination else { return }
-
-        isCheckingDestination = true
-        destinationStatus = ""
-        defer { isCheckingDestination = false }
-
-        do {
-            let installer = try DirectFileInstaller(destinationPath: destinationPath)
-            _ = installer
-
-            destinationSucceeded = true
-            destinationStatus = "Destination is accessible."
-            appendLog("Destination folder is ready: \(destinationPath)")
-        } catch {
-            destinationSucceeded = false
-            destinationStatus = error.localizedDescription
-            appendLog("Destination check failed: \(error.localizedDescription)")
-        }
-    }
-
-    func installSourcePath() async {
-        guard installTask == nil else { return }
+    func patchFiles() {
+        guard !isBusy else { return }
 
         guard isOfficialBuild else {
             present(InstallError.unofficialBuild)
             return
         }
 
-        let sourceURL: URL
         do {
-            sourceURL = try sourceFolderURL()
-            _ = try DirectFileInstaller(destinationPath: destinationPath)
+            if packageHeader == nil || importedData == nil || importedURL == nil {
+                try readPackageForPatch()
+            }
+
+            guard let header = packageHeader,
+                  let data = importedData else {
+                throw JuanchoPackageError.malformedHeader
+            }
+
+            if document == nil {
+                if header.passwordProtected {
+                    waitingForPassword = true
+                    password = ""
+                    passwordError = ""
+                    passwordPrompt = true
+                    appendLog("Password required. Waiting for input…")
+                    return
+                }
+
+                document = try JuanchoPackageCodec.decode(data)
+            }
+
+            guard let document else {
+                throw JuanchoPackageError.malformedPayload
+            }
+
+            beginPatch(document)
         } catch {
             present(error)
+        }
+    }
+
+    func unlockAndPatch() {
+        guard waitingForPassword else {
+            passwordPrompt = false
+            return
+        }
+
+        guard let data = importedData,
+              let header = packageHeader,
+              header.passwordProtected else {
+            passwordError = "The package is no longer loaded."
+            waitingForPassword = false
+            passwordPrompt = false
+            return
+        }
+
+        do {
+            document = try JuanchoPackageCodec.decode(
+                data,
+                password: password
+            )
+
+            waitingForPassword = false
+            passwordPrompt = false
+            passwordError = ""
+            appendLog("Password accepted. Starting patch…")
+
+            guard let document else {
+                throw JuanchoPackageError.malformedPayload
+            }
+
+            beginPatch(document)
+        } catch {
+            passwordError = error.localizedDescription
+            waitingForPassword = true
+            passwordPrompt = true
+            appendLog("Password rejected: (error.localizedDescription)")
+        }
+    }
+
+    func cancelPasswordPrompt() {
+        waitingForPassword = false
+        passwordPrompt = false
+        password = ""
+        passwordError = ""
+        appendLog("Patch cancelled at password prompt.")
+    }
+
+    func unpatch(_ patch: PatchRecord) async {
+        guard operationTask == nil else { return }
+
+        guard isOfficialBuild else {
+            present(InstallError.unofficialBuild)
             return
         }
 
         isBusy = true
-        installCompleted = false
-        progress = 0
-        processedFiles = 0
-        successCount = 0
-        failedCount = 0
         logLines = []
+        appendLog("Unpatching (patch.packageName)…")
 
-        installTask = Task { [weak self] in
+        operationTask = Task { [weak self] in
             guard let self else { return }
 
             defer {
-                Task { @MainActor in
-                    self.isBusy = false
-                    self.installTask = nil
-                }
+                self.isBusy = false
+                self.operationTask = nil
+                self.refreshPatches()
             }
 
             do {
-                self.appendLog("Scanning \(sourceURL.lastPathComponent)…")
-
-                let files = try await Task.detached(priority: .userInitiated) {
-                    try FileScanner.scan(folderURL: sourceURL)
-                }.value
-
-                self.totalFiles = files.count
-
-                guard !files.isEmpty else {
-                    throw InstallError.noSourceFiles(sourceURL.path)
-                }
-
-                self.appendLog("Found \(files.count) file(s) to install.")
-                self.appendLog("Destination: \(self.destinationPath)")
-                self.appendLog("Using direct filesystem installation — no WebDAV.")
-
-                let installer = try DirectFileInstaller(
-                    destinationPath: self.destinationPath
+                let message = try self.patchStore.unpatch(
+                    projectName: patch.packageName,
+                    bundleID: patch.bundleID
                 )
 
-                let result = await installer.install(
-                    files: files,
-                    onEvent: { event in
-                        await self.handle(event)
-                    }
-                )
+                self.appendLog(message)
+            } catch {
+                self.present(error)
+            }
+        }
 
-                if Task.isCancelled {
-                    self.appendLog("Installation cancelled.")
-                    return
-                }
+        await operationTask?.value
+    }
 
-                self.successCount = result.succeeded
-                self.failedCount = result.failed
-                self.processedFiles = result.succeeded + result.failed
-                self.progress = self.totalFiles == 0
-                    ? 0
-                    : Double(self.processedFiles) / Double(self.totalFiles)
+    func cancelOperation() {
+        operationTask?.cancel()
+    }
 
-                self.installCompleted = result.failed == 0
-                self.appendLog(
-                    "Done! \(result.succeeded) installed, \(result.failed) failed."
-                )
-            } catch is CancellationError {
-                self.appendLog("Installation cancelled.")
+    private func beginPatch(_ document: JuanchoDocument) {
+        guard operationTask == nil else { return }
+
+        isBusy = true
+        logLines = []
+        appendLog("Patching (document.header.projectName)…")
+        appendLog("Target Bundle ID: (document.header.targetBundleID)")
+        appendLog("Manifest: (document.manifest.rules.count) replacement file(s)")
+        appendLog("Existing files will be backed up before replacement.")
+
+        operationTask = Task { [weak self] in
+            guard let self else { return }
+
+            defer {
+                self.isBusy = false
+                self.operationTask = nil
+                self.refreshPatches()
+            }
+
+            do {
+                let message = try self.patchStore.apply(document: document)
+                self.appendLog(message)
+                self.appendLog("Patch completed successfully. Backups are saved for Unpatch.")
             } catch {
                 self.present(error)
             }
         }
     }
 
-    func cancelInstall() {
-        installTask?.cancel()
+    private func readPackageForPatch() throws {
+        let url = try resolveJuanchoURL()
+        let data = try Data(contentsOf: url)
+        let header = try JuanchoPackageCodec.readHeader(data)
+
+        importedData = data
+        importedURL = url
+        packageHeader = header
+        packageHeader.map { _ in () }
+        password = ""
+        passwordError = ""
+        document = nil
+
+        appendLog("Patch requested. Reading package: (url.path)")
+        appendLog("Package: (header.projectName)")
+        appendLog("Bundle ID: (header.targetBundleID)")
+        appendLog("Password: (header.passwordProtected ? "required" : "none")")
+
+        if !header.passwordProtected {
+            document = try JuanchoPackageCodec.decode(data)
+        }
+
+        checkTarget()
     }
 
-    private func sourceFolderURL() throws -> URL {
+    private func checkTarget() {
+        guard let header = packageHeader else {
+            targetStatus = nil
+            targetReady = false
+            return
+        }
+
+        do {
+            let container = try FilesystemTarget.locateApplication(
+                bundleID: header.targetBundleID
+            )
+
+            let base = try FilesystemTarget.destinationURL(
+                container: container,
+                relativePath: header.basePath
+            )
+
+            targetReady = true
+            targetStatus = "Target found. Base path: (base.path)"
+            appendLog("Target application found: (container.url.path)")
+        } catch {
+            targetReady = false
+            targetStatus = error.localizedDescription
+            appendLog("Target check: (error.localizedDescription)")
+        }
+    }
+
+    private func refreshPatches() {
+        activePatches = patchStore.activeRecords.values.sorted {
+            $0.appliedAt > $1.appliedAt
+        }
+    }
+
+    private func resolveJuanchoURL() throws -> URL {
         let trimmed = sourcePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("/") else {
-            throw InstallError.invalidSourcePath
-        }
 
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(
-            atPath: trimmed,
-            isDirectory: &isDirectory
-        ) else {
-            throw InstallError.sourceNotFound(trimmed)
-        }
-
-        guard isDirectory.boolValue else {
-            throw InstallError.sourceNotDirectory(trimmed)
-        }
-
-        return URL(
-            fileURLWithPath: trimmed,
-            isDirectory: true
-        ).resolvingSymlinksInPath()
-    }
-
-    private func handle(_ event: InstallEvent) {
-        switch event {
-        case .creatingDirectory(let path):
-            appendLog("Creating folder: \(path)")
-        case let .installing(current, total, path):
-            appendLog("Installing [\(current)/\(total)]: \(path)")
-        case .installed(let path):
-            successCount += 1
-            processedFiles += 1
-            progress = totalFiles == 0
-                ? 0
-                : Double(processedFiles) / Double(totalFiles)
-            appendLog("Installed [\(processedFiles)/\(totalFiles)]: \(path)")
-        case .failed(let path, let reason):
-            failedCount += 1
-            processedFiles += 1
-            progress = totalFiles == 0
-                ? 0
-                : Double(processedFiles) / Double(totalFiles)
-            appendLog(
-                "Failed [\(processedFiles)/\(totalFiles)]: \(path) — \(reason)"
+        guard !trimmed.isEmpty, trimmed.hasPrefix("/") else {
+            throw NSError(
+                domain: "Juancho",
+                code: 200,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Enter an absolute path beginning with /."
+                ]
             )
         }
+
+        let input = URL(fileURLWithPath: trimmed).standardizedFileURL
+        var isDirectory: ObjCBool = false
+
+        guard FileManager.default.fileExists(
+            atPath: input.path,
+            isDirectory: &isDirectory
+        ) else {
+            throw NSError(
+                domain: "Juancho",
+                code: 201,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Path does not exist: (input.path)"
+                ]
+            )
+        }
+
+        if !isDirectory.boolValue {
+            guard input.pathExtension.lowercased() == "juancho" else {
+                throw NSError(
+                    domain: "Juancho",
+                    code: 202,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Selected file is not a .juancho package."
+                    ]
+                )
+            }
+
+            return input
+        }
+
+        let candidates = try FileManager.default.contentsOfDirectory(
+            at: input,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter { url in
+            guard url.pathExtension.lowercased() == "juancho" else {
+                return false
+            }
+
+            return (try? url.resourceValues(
+                forKeys: [.isRegularFileKey]
+            ).isRegularFile) == true
+        }
+        .sorted {
+            $0.lastPathComponent.localizedCaseInsensitiveCompare(
+                $1.lastPathComponent
+            ) == .orderedAscending
+        }
+
+        guard !candidates.isEmpty else {
+            throw NSError(
+                domain: "Juancho",
+                code: 203,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "No .juancho package was found in: (input.path)"
+                ]
+            )
+        }
+
+        guard candidates.count == 1, let only = candidates.first else {
+            let names = candidates.prefix(8)
+                .map(\.lastPathComponent)
+                .joined(separator: "\n")
+
+            throw NSError(
+                domain: "Juancho",
+                code: 204,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Multiple .juancho packages were found. Enter the exact package path.\n\n\(names)"
+                ]
+            )
+        }
+
+        return only
+    }
+
+    private func clearLoadedPackage() {
+        packageHeader = nil
+        document = nil
+        importedData = nil
+        importedURL = nil
+        targetStatus = nil
+        targetReady = false
+        passwordPrompt = false
+        password = ""
+        passwordError = ""
+        waitingForPassword = false
     }
 
     private func appendLog(_ line: String) {
         logLines.append(line)
-
         if logLines.count > 2_000 {
             logLines.removeFirst(logLines.count - 2_000)
         }
@@ -274,6 +415,6 @@ final class UploadViewModel: ObservableObject {
     private func present(_ error: Error) {
         errorMessage = error.localizedDescription
         showingError = true
-        appendLog("Error: \(error.localizedDescription)")
+        appendLog("Error: (error.localizedDescription)")
     }
 }

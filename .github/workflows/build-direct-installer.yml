@@ -22,12 +22,27 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf build
-          xcodebuild             -project iOS/DirectInstaller/DirectInstaller.xcodeproj             -scheme DirectInstaller             -configuration Release             -sdk iphoneos             -destination 'generic/platform=iOS'             CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/build"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             DEVELOPMENT_TEAM=""             clean build
+          xcodebuild             -project iOS/DirectInstaller/DirectInstaller.xcodeproj             -scheme DirectInstaller             -configuration Release             -sdk iphoneos             CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/build"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             DEVELOPMENT_TEAM=""             clean build
+
           test -d "$RUNNER_TEMP/build/DirectInstaller.app"
           test -f "$RUNNER_TEMP/build/DirectInstaller.app/DirectInstaller"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$RUNNER_TEMP/build/DirectInstaller.app/Info.plist"
 
-      - name: Add TrollStore filesystem entitlements
+      - name: Validate Juancho package reader
+        run: |
+          set -euo pipefail
+          for file in             iOS/DirectInstaller/Models.swift             iOS/DirectInstaller/Crypto.swift             iOS/DirectInstaller/CompressionHelper.swift             iOS/DirectInstaller/JuanchoPackage.swift             iOS/DirectInstaller/FilesystemTarget.swift             iOS/DirectInstaller/PatchStore.swift             iOS/DirectInstaller/UploadViewModel.swift             iOS/DirectInstaller/ContentView.swift; do
+            test -f "$file"
+          done
+          grep -q "JuanchoPackageCodec.decode" iOS/DirectInstaller/UploadViewModel.swift
+          grep -q "passwordPrompt" iOS/DirectInstaller/UploadViewModel.swift
+          grep -q "PatchStore" iOS/DirectInstaller/UploadViewModel.swift
+          if grep -q "WebDAV" iOS/DirectInstaller/ContentView.swift; then
+            echo "WebDAV UI reference found"
+            exit 1
+          fi
+
+      - name: Add filesystem entitlements
         run: |
           set -euo pipefail
           ENTITLEMENTS="$RUNNER_TEMP/FilzaEntitlements.plist"
@@ -36,7 +51,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :platform-application bool true" "$ENTITLEMENTS"
           /usr/libexec/PlistBuddy -c "Add :com.apple.private.security.storage.AppDataContainers bool true" "$ENTITLEMENTS"
           /usr/bin/codesign --force --sign - --entitlements "$ENTITLEMENTS" "$RUNNER_TEMP/build/DirectInstaller.app"
-          /usr/bin/codesign -d --entitlements :- "$RUNNER_TEMP/build/DirectInstaller.app"
+          /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/build/DirectInstaller.app"
 
       - name: Package IPA
         run: |

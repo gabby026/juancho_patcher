@@ -1,62 +1,75 @@
 // !$*UTF8*$!
 {
 	archiveVersion = 1;
-	classes = {
-	};
+	classes = {};
 	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A10000000000000000000001 /* DirectInstallerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* DirectInstallerApp.swift */; };
-		A10000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* ContentView.swift */; };
-		A10000000000000000000003 /* UploadViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* UploadViewModel.swift */; };
-		A10000000000000000000004 /* WebDAVUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* WebDAVUploader.swift */; };
+		B00100000000000000000001 = {isa = PBXBuildFile; fileRef = F00100000000000000000001; };
+		B00100000000000000000002 = {isa = PBXBuildFile; fileRef = F00100000000000000000002; };
+		B00100000000000000000003 = {isa = PBXBuildFile; fileRef = F00100000000000000000003; };
+		B00100000000000000000004 = {isa = PBXBuildFile; fileRef = F00100000000000000000004; };
+		B00100000000000000000005 = {isa = PBXBuildFile; fileRef = F00100000000000000000005; };
+		B00100000000000000000006 = {isa = PBXBuildFile; fileRef = F00100000000000000000006; };
+		B00100000000000000000007 = {isa = PBXBuildFile; fileRef = F00100000000000000000007; };
+		B00100000000000000000008 = {isa = PBXBuildFile; fileRef = F00100000000000000000008; };
+		B00100000000000000000009 = {isa = PBXBuildFile; fileRef = F00100000000000000000009; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A20000000000000000000001 /* DirectInstallerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectInstallerApp.swift; sourceTree = "<group>"; };
-		A20000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		A20000000000000000000003 /* UploadViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadViewModel.swift; sourceTree = "<group>"; };
-		A20000000000000000000004 /* WebDAVUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebDAVUploader.swift; sourceTree = "<group>"; };
-		A20000000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A20000000000000000000007 /* DirectInstaller.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DirectInstaller.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00100000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainUploaderApp.swift; sourceTree = "<group>"; };
+		F00100000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		F00100000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadViewModel.swift; sourceTree = "<group>"; };
+		F00100000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		F00100000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crypto.swift; sourceTree = "<group>"; };
+		F00100000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressionHelper.swift; sourceTree = "<group>"; };
+		F00100000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JuanchoPackage.swift; sourceTree = "<group>"; };
+		F00100000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesystemTarget.swift; sourceTree = "<group>"; };
+		F00100000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchStore.swift; sourceTree = "<group>"; };
+		F00100000000000000000010 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F00200000000000000000001 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DirectInstaller.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		A30000000000000000000001 /* Frameworks */ = {
+		FRM10000000000000000000001 = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
-			files = (
-			);
+			files = ();
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A40000000000000000000001 = {
+		GRP10000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
-				A40000000000000000000002 /* DirectInstaller */,
-				A40000000000000000000003 /* Products */,
+				GRP10000000000000000000002,
+				GRP10000000000000000000003,
 			);
 			sourceTree = "<group>";
 		};
-		A40000000000000000000002 /* DirectInstaller */ = {
+		GRP10000000000000000000002 = {
 			isa = PBXGroup;
 			children = (
-				A20000000000000000000001 /* DirectInstallerApp.swift */,
-				A20000000000000000000002 /* ContentView.swift */,
-				A20000000000000000000003 /* UploadViewModel.swift */,
-				A20000000000000000000004 /* WebDAVUploader.swift */,
-				A20000000000000000000006 /* Info.plist */,
+				F00100000000000000000001,
+				F00100000000000000000002,
+				F00100000000000000000003,
+				F00100000000000000000004,
+				F00100000000000000000005,
+				F00100000000000000000006,
+				F00100000000000000000007,
+				F00100000000000000000008,
+				F00100000000000000000009,
+				F00100000000000000000010,
 			);
 			path = DirectInstaller;
 			sourceTree = "<group>";
 		};
-		A40000000000000000000003 /* Products */ = {
+		GRP10000000000000000000003 = {
 			isa = PBXGroup;
 			children = (
-				A20000000000000000000007 /* DirectInstaller.app */,
+				F00200000000000000000001,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -64,39 +77,37 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A50000000000000000000001 /* DirectInstaller */ = {
+		TGT10000000000000000000001 = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A60000000000000000000002 /* Build configuration list for PBXNativeTarget "DirectInstaller" */;
+			buildConfigurationList = CFG10000000000000000000002;
 			buildPhases = (
-				A30000000000000000000002 /* Sources */,
-				A30000000000000000000001 /* Frameworks */,
-				A30000000000000000000003 /* Resources */,
+				SRC10000000000000000000001,
+				FRM10000000000000000000001,
+				RES10000000000000000000001,
 			);
-			buildRules = (
-			);
-			dependencies = (
-			);
+			buildRules = ();
+			dependencies = ();
 			name = DirectInstaller;
 			productName = DirectInstaller;
-			productReference = A20000000000000000000007 /* DirectInstaller.app */;
+			productReference = F00200000000000000000001;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		A70000000000000000000001 /* Project object */ = {
+		PRJ10000000000000000000001 = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
-					A50000000000000000000001 = {
+					TGT10000000000000000000001 = {
 						CreatedOnToolsVersion = 16.0;
 					};
 				};
 			};
-			buildConfigurationList = A60000000000000000000001 /* Build configuration list for PBXProject "DirectInstaller" */;
+			buildConfigurationList = CFG10000000000000000000001;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -104,68 +115,65 @@
 				en,
 				Base,
 			);
-			mainGroup = A40000000000000000000001;
-			productRefGroup = A40000000000000000000003 /* Products */;
+			mainGroup = GRP10000000000000000000001;
+			productRefGroup = GRP10000000000000000000003;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A50000000000000000000001 /* DirectInstaller */,
+				TGT10000000000000000000001,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		A30000000000000000000003 /* Resources */ = {
+		RES10000000000000000000001 = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (
-			);
+			files = ();
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A30000000000000000000002 /* Sources */ = {
+		SRC10000000000000000000001 = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10000000000000000000001 /* DirectInstallerApp.swift in Sources */,
-				A10000000000000000000002 /* ContentView.swift in Sources */,
-				A10000000000000000000003 /* UploadViewModel.swift in Sources */,
-				A10000000000000000000004 /* WebDAVUploader.swift in Sources */,
+				B00100000000000000000001,
+				B00100000000000000000002,
+				B00100000000000000000003,
+				B00100000000000000000004,
+				B00100000000000000000005,
+				B00100000000000000000006,
+				B00100000000000000000007,
+				B00100000000000000000008,
+				B00100000000000000000009,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		A80000000000000000000001 /* Debug */ = {
+		CFG20000000000000000000001 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_MODULES = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
@@ -175,54 +183,40 @@
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
-					"$(inherited)",
-				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
-				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.7;
 			};
 			name = Debug;
 		};
-		A80000000000000000000002 /* Release */ = {
+		CFG20000000000000000000002 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_MODULES = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = YES;
@@ -230,22 +224,40 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 3;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
+				GCC_WARN_UNDECLARED_FUNCTION = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
-				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
-				VALIDATE_PRODUCT = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Osize";
+				SWIFT_VERSION = 5.7;
 			};
 			name = Release;
 		};
-		A80000000000000000000003 /* Debug */ = {
+		CFG10000000000000000000001 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CFG20000000000000000000001,
+				CFG20000000000000000000002,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CFG10000000000000000000002 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CFG30000000000000000000001,
+				CFG30000000000000000000002,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CFG30000000000000000000001 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -264,12 +276,12 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 5.7;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		A80000000000000000000004 /* Release */ = {
+		CFG30000000000000000000002 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -277,7 +289,6 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
-				ENABLE_TESTABILITY = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = DirectInstaller/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -291,35 +302,13 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.7;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-Osize";
-				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
-/* End XCBuildConfiguration section */
-
-/* Begin XCConfigurationList section */
-		A60000000000000000000001 /* Build configuration list for PBXProject "DirectInstaller" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A80000000000000000000001 /* Debug */,
-				A80000000000000000000002 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		A60000000000000000000002 /* Build configuration list for PBXNativeTarget "DirectInstaller" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A80000000000000000000003 /* Debug */,
-				A80000000000000000000004 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-/* End XCConfigurationList section */
 	};
-	rootObject = A70000000000000000000001 /* Project object */;
+	rootObject = PRJ10000000000000000000001;
 }
