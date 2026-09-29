@@ -23,7 +23,17 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf build "$RUNNER_TEMP/juancho-build"
-          xcodebuild             -project iOS/Juancho/Juancho.xcodeproj             -scheme Juancho             -configuration Release             -sdk iphoneos             -destination 'generic/platform=iOS'             CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/juancho-build"             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             CODE_SIGN_IDENTITY=""             DEVELOPMENT_TEAM=""             clean build
+          xcodebuild \
+            -project iOS/Juancho/Juancho.xcodeproj \
+            -scheme Juancho \
+            -configuration Release \
+            -sdk iphoneos \
+            CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/juancho-build" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            clean build
 
           test -d "$RUNNER_TEMP/juancho-build/Juancho.app"
           test -f "$RUNNER_TEMP/juancho-build/Juancho.app/Juancho"
