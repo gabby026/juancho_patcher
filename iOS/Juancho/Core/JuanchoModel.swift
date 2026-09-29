@@ -10,6 +10,7 @@ final class JuanchoModel: ObservableObject {
     @Published var importedURL: URL?
     @Published var packageURLs: [URL] = []
     @Published var packagePath = ""
+    @Published private(set) var packageHeader: JuanchoPackageHeader?
     @Published var errorMessage: String?
     @Published var passwordPrompt = false
     @Published var password = ""
@@ -17,10 +18,9 @@ final class JuanchoModel: ObservableObject {
     @Published var accessStatus = "Not checked"
     @Published var isBusy = false
 
-    private var autoPatchAfterUnlock = false
+    private var patchRequestedWhileLocked = false
 
     let patchStore = PatchStore()
-
     private let shareHandoffType = "com.juancho.juancho-package"
 
     private var packagesDirectory: URL {
@@ -53,6 +53,7 @@ final class JuanchoModel: ObservableObject {
 
             try data.write(to: destination, options: .atomic)
             loadPackages()
+            packagePath = destination.path
             importURL(destination)
             status = "Saved to Juancho — \(filename)"
         } catch {
@@ -66,6 +67,7 @@ final class JuanchoModel: ObservableObject {
                 at: packagesDirectory,
                 withIntermediateDirectories: true
             )
+
             packageURLs = try FileManager.default.contentsOfDirectory(
                 at: packagesDirectory,
                 includingPropertiesForKeys: [.isRegularFileKey],
@@ -118,76 +120,219 @@ final class JuanchoModel: ObservableObject {
         importURL(url)
     }
 
-    /// Accept either:
-    /// 1. an absolute path directly to a .juancho file, or
-    /// 2. an absolute directory path containing exactly one .juancho file.
-    ///
-    /// The archive is decoded/decompressed in memory. Its payload is never
-    /// copied into the target application until PatchStore.apply() verifies it.
-    func loadPackageFromPath(autoPatch: Bool = false) {
+    func loadPackageFromPath() {
         let trimmed = packagePath.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
             let url = try resolveJuanchoURL(from: trimmed)
             packagePath = url.path
-            importURL(url, autoPatch: autoPatch)
+            importURL(url)
         } catch {
             errorMessage = error.localizedDescription
             status = "Package path error"
         }
     }
 
-    func importURL(_ url: URL, autoPatch: Bool = false) {
+    func importURL(_ url: URL) {
         do {
             let data = try Data(contentsOf: url)
             let header = try JuanchoPackageCodec.readHeader(data)
 
             importedURL = url.standardizedFileURL
             importedData = data
+            packageHeader = header
             password = ""
             document = nil
             accessStatus = "Not checked"
-            autoPatchAfterUnlock = autoPatch
+            patchRequestedWhileLocked = false
 
             if header.passwordProtected {
-                passwordPrompt = true
-                status = "Password required for \(header.projectName)"
+                status = "Package loaded — password required to patch"
             } else {
                 document = try JuanchoPackageCodec.decode(data)
-                status = "Decompressed \(header.projectName) — \(document?.manifest.rules.count ?? 0) files"
-                if autoPatch {
-                    apply()
-                }
+                status = "Package ready — \(document?.manifest.rules.count ?? 0) files"
             }
         } catch {
-            autoPatchAfterUnlock = false
+            importedURL = nil
+            importedData = nil
+            packageHeader = nil
+            document = nil
+            patchRequestedWhileLocked = false
             errorMessage = error.localizedDescription
         }
     }
 
-    func unlock() {
-        guard let data = importedData else { return }
-        do {
-            document = try JuanchoPackageCodec.decode(data, password: password)
-            passwordPrompt = false
-            password = ""
-            status = "Decompressed and unlocked \(document?.manifest.rules.count ?? 0) files"
+    /// Patch is the operation that unlocks a protected package.
+    /// Unprotected packages patch immediately.
+    func apply() {
+        guard !isBusy else { return }
 
-            let shouldAutoPatch = autoPatchAfterUnlock
-            autoPatchAfterUnlock = false
-
-            if shouldAutoPatch {
-                apply()
+        if document == nil {
+            guard let data = importedData else {
+                errorMessage = "Load a .juancho package first."
+                return
             }
+
+            do {
+                let header = try JuanchoPackageCodec.readHeader(data)
+
+                if header.passwordProtected {
+                    patchRequestedWhileLocked = true
+                    password = ""
+                    passwordPrompt = true
+                    status = "Enter package password to patch"
+                    return
+                }
+
+                document = try JuanchoPackageCodec.decode(data)
+            } catch {
+                errorMessage = error.localizedDescription
+                return
+            }
+        }
+
+        guard let doc = document else {
+            errorMessage = "The .juancho package could not be decoded."
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            status = try patchStore.apply(document: doc)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func unlockForPatch() {
+        guard patchRequestedWhileLocked else {
+            errorMessage = "No patch operation is waiting for a password."
+            return
+        }
+
+        guard let data = importedData else {
+            errorMessage = "The package is no longer loaded."
+            patchRequestedWhileLocked = false
+            return
+        }
+
+        do {
+            document = try JuanchoPackageCodec.decode(
+                data,
+                password: password
+            )
+
+            password = ""
+            passwordPrompt = false
+            patchRequestedWhileLocked = false
+
+            status = "Password accepted — patching..."
+            isBusy = true
+            defer { isBusy = false }
+
+            status = try patchStore.apply(document: document!)
+        } catch {
+            // Keep the password dialog open for a wrong password.
+            errorMessage = error.localizedDescription
+            if importedData != nil, packageHeader?.passwordProtected == true {
+                passwordPrompt = true
+                patchRequestedWhileLocked = true
+            }
         }
     }
 
     func cancelPasswordPrompt() {
         passwordPrompt = false
         password = ""
-        autoPatchAfterUnlock = false
+        patchRequestedWhileLocked = false
+    }
+
+    func unpatch() {
+        guard let doc = document, !isBusy else {
+            if document == nil {
+                errorMessage = "Load and unlock the package before unpatching."
+            }
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            status = try patchStore.unpatch(
+                projectName: doc.header.projectName,
+                bundleID: doc.header.targetBundleID
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func verifyInstalled() {
+        guard let doc = document else {
+            errorMessage = packageHeader?.passwordProtected == true
+                ? "Enter the package password by pressing Patch first."
+                : "Load a .juancho package first."
+            return
+        }
+
+        do {
+            let container = try FilesystemTarget.locateApplication(
+                bundleID: doc.header.targetBundleID
+            )
+            var mismatches: [String] = []
+
+            for rule in doc.manifest.rules {
+                let url = try FilesystemTarget.destinationURL(
+                    container: container,
+                    relativePath: rule.relativePath
+                )
+
+                guard FileManager.default.fileExists(atPath: url.path) else {
+                    mismatches.append("Missing: \(rule.relativePath)")
+                    continue
+                }
+
+                let data = try Data(contentsOf: url)
+                if sha256(data) != rule.sha256 {
+                    mismatches.append("Changed: \(rule.relativePath)")
+                }
+            }
+
+            status = mismatches.isEmpty
+                ? "All \(doc.manifest.rules.count) installed files match."
+                : "\(mismatches.count) installed files do not match."
+
+            if !mismatches.isEmpty {
+                errorMessage = mismatches.prefix(5).joined(separator: "\n")
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func checkAccess() {
+        guard let doc = document else {
+            accessStatus = packageHeader?.passwordProtected == true
+                ? "Package is password protected. Press Patch and enter the password first."
+                : "Load a .juancho package first."
+            return
+        }
+
+        do {
+            let c = try FilesystemTarget.locateApplication(
+                bundleID: doc.header.targetBundleID
+            )
+            let base = try FilesystemTarget.destinationURL(
+                container: c,
+                relativePath: doc.header.basePath
+            )
+            accessStatus = "Container accessible\n\(c.url.path)\nBase path: \(base.path)"
+        } catch {
+            accessStatus = error.localizedDescription
+        }
     }
 
     private func resolveJuanchoURL(from path: String) throws -> URL {
@@ -195,7 +340,10 @@ final class JuanchoModel: ObservableObject {
             throw NSError(
                 domain: "Juancho",
                 code: 200,
-                userInfo: [NSLocalizedDescriptionKey: "Enter an absolute path beginning with /."]
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Enter an absolute path beginning with /."
+                ]
             )
         }
 
@@ -209,7 +357,10 @@ final class JuanchoModel: ObservableObject {
             throw NSError(
                 domain: "Juancho",
                 code: 201,
-                userInfo: [NSLocalizedDescriptionKey: "Path does not exist: \(input.path)"]
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Path does not exist: \(input.path)"
+                ]
             )
         }
 
@@ -218,7 +369,10 @@ final class JuanchoModel: ObservableObject {
                 throw NSError(
                     domain: "Juancho",
                     code: 202,
-                    userInfo: [NSLocalizedDescriptionKey: "Selected file is not a .juancho package."]
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Selected file is not a .juancho package."
+                    ]
                 )
             }
             return input
@@ -230,23 +384,35 @@ final class JuanchoModel: ObservableObject {
             options: [.skipsHiddenFiles]
         )
         .filter { url in
-            guard url.pathExtension.lowercased() == "juancho" else { return false }
-            return (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            guard url.pathExtension.lowercased() == "juancho" else {
+                return false
+            }
+            return (try? url.resourceValues(
+                forKeys: [.isRegularFileKey]
+            ).isRegularFile) == true
         }
         .sorted {
-            $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending
+            $0.lastPathComponent.localizedCaseInsensitiveCompare(
+                $1.lastPathComponent
+            ) == .orderedAscending
         }
 
         guard !candidates.isEmpty else {
             throw NSError(
                 domain: "Juancho",
                 code: 203,
-                userInfo: [NSLocalizedDescriptionKey: "No .juancho package was found in: \(input.path)"]
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "No .juancho package was found in: \(input.path)"
+                ]
             )
         }
 
         guard candidates.count == 1, let only = candidates.first else {
-            let names = candidates.prefix(8).map(\.lastPathComponent).joined(separator: "\n")
+            let names = candidates.prefix(8)
+                .map(\.lastPathComponent)
+                .joined(separator: "\n")
+
             throw NSError(
                 domain: "Juancho",
                 code: 204,
@@ -260,79 +426,9 @@ final class JuanchoModel: ObservableObject {
         return only
     }
 
-    func checkAccess() {
-        guard let doc = document else {
-            accessStatus = "Import a .juancho first."
-            return
-        }
-
-        do {
-            let c = try FilesystemTarget.locateApplication(bundleID: doc.header.targetBundleID)
-            let base = try FilesystemTarget.destinationURL(container: c, relativePath: doc.header.basePath)
-            accessStatus = "Container accessible\n\(c.url.path)\nBase path: \(base.path)"
-        } catch {
-            accessStatus = error.localizedDescription
-        }
-    }
-
-    func apply() {
-        guard let doc = document, !isBusy else { return }
-        isBusy = true
-        do {
-            status = try patchStore.apply(document: doc)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        isBusy = false
-    }
-
-    func unpatch() {
-        guard let doc = document, !isBusy else { return }
-        isBusy = true
-        do {
-            status = try patchStore.unpatch(
-                projectName: doc.header.projectName,
-                bundleID: doc.header.targetBundleID
-            )
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        isBusy = false
-    }
-
-    func verifyInstalled() {
-        guard let doc = document else { return }
-        do {
-            let container = try FilesystemTarget.locateApplication(bundleID: doc.header.targetBundleID)
-            var mismatches: [String] = []
-
-            for rule in doc.manifest.rules {
-                let url = try FilesystemTarget.destinationURL(
-                    container: container,
-                    relativePath: rule.relativePath
-                )
-                guard FileManager.default.fileExists(atPath: url.path) else {
-                    mismatches.append("Missing: \(rule.relativePath)")
-                    continue
-                }
-                let data = try Data(contentsOf: url)
-                if sha256(data) != rule.sha256 {
-                    mismatches.append("Changed: \(rule.relativePath)")
-                }
-            }
-
-            status = mismatches.isEmpty
-                ? "All \(doc.manifest.rules.count) installed files match."
-                : "\(mismatches.count) installed files do not match."
-            if !mismatches.isEmpty {
-                errorMessage = mismatches.prefix(5).joined(separator: "\n")
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
     private func sha256(_ data: Data) -> String {
-        CryptoKit.SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        CryptoKit.SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
