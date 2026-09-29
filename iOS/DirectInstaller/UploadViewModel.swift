@@ -51,28 +51,66 @@ final class UploadViewModel: ObservableObject {
     func loadPackage() {
         do {
             let url = try resolveJuanchoURL()
-            let data = try Data(contentsOf: url)
-            let header = try JuanchoPackageCodec.readHeader(data)
+            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
 
-            importedData = data
             importedURL = url
-            packageHeader = header
+            importedData = data
             password = ""
             passwordError = ""
             waitingForPassword = false
             targetReady = false
             targetStatus = nil
-            appendLog("Read package: (url.path)")
-            appendLog("Project: (header.projectName)")
-            appendLog("Bundle ID: (header.targetBundleID)")
-            appendLog("Base path: \(header.basePath.isEmpty ? "/" : header.basePath)")
+            document = nil
+            packageHeader = nil
 
-            if header.passwordProtected {
-                document = nil
-                appendLog("Package is password protected. Password will be requested only when Patch Files is pressed.")
+            if LegacyJuanchoCodec.isLegacy7z(data) {
+                appendLog("Detected legacy 7-Zip .juancho package.")
+                appendLog("Package file: \(url.path)")
+                appendLog("Target: \(LegacyJuanchoCodec.defaultBundleID)")
+                appendLog("Base path: \(LegacyJuanchoCodec.defaultBasePath)")
+
+                do {
+                    document = try LegacyJuanchoCodec.decode(
+                        packageURL: url
+                    )
+                    packageHeader = document?.header
+                    appendLog(
+                        "7-Zip package decoded: \(document?.manifest.rules.count ?? 0) file(s)."
+                    )
+                } catch let error as LegacyJuanchoError {
+                    if case .passwordRequired = error {
+                        packageHeader = LegacyJuanchoCodec.syntheticHeader(
+                            packageURL: url,
+                            passwordProtected: true
+                        )
+                        appendLog(
+                            "7-Zip package is password protected. Password will be requested only when Patch Files is pressed."
+                        )
+                    } else {
+                        throw error
+                    }
+                }
             } else {
-                document = try JuanchoPackageCodec.decode(data)
-                appendLog("Package decoded: (document?.manifest.rules.count ?? 0) replacement file(s).")
+                let header = try JuanchoPackageCodec.readHeader(data)
+                packageHeader = header
+
+                appendLog("Read JUANCHO package: \(url.path)")
+                appendLog("Project: \(header.projectName)")
+                appendLog("Bundle ID: \(header.targetBundleID)")
+                appendLog(
+                    "Base path: \(header.basePath.isEmpty ? "/" : header.basePath)"
+                )
+
+                if header.passwordProtected {
+                    appendLog(
+                        "Package is password protected. Password will be requested only when Patch Files is pressed."
+                    )
+                } else {
+                    document = try JuanchoPackageCodec.decode(data)
+                    appendLog(
+                        "Package decoded: \(document?.manifest.rules.count ?? 0) replacement file(s)."
+                    )
+                }
             }
 
             checkTarget()
@@ -86,17 +124,28 @@ final class UploadViewModel: ObservableObject {
         guard !isBusy else { return }
 
         guard isOfficialBuild else {
-            present(NSError(domain: "Juancho", code: 403, userInfo: [NSLocalizedDescriptionKey: "This is not an official Juancho Installer build."]))
+            present(
+                NSError(
+                    domain: "Juancho",
+                    code: 403,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "This is not an official Juancho Installer build."
+                    ]
+                )
+            )
             return
         }
 
         do {
-            if packageHeader == nil || importedData == nil || importedURL == nil {
+            if packageHeader == nil || importedURL == nil {
                 try readPackageForPatch()
+                if passwordPrompt {
+                    return
+                }
             }
 
-            guard let header = packageHeader,
-                  let data = importedData else {
+            guard let header = packageHeader else {
                 throw JuanchoPackageError.malformedHeader
             }
 
@@ -110,7 +159,18 @@ final class UploadViewModel: ObservableObject {
                     return
                 }
 
-                document = try JuanchoPackageCodec.decode(data)
+                guard let data = importedData else {
+                    throw JuanchoPackageError.malformedPayload
+                }
+
+                if header.formatVersion == 0,
+                   let url = importedURL {
+                    document = try LegacyJuanchoCodec.decode(
+                        packageURL: url
+                    )
+                } else {
+                    document = try JuanchoPackageCodec.decode(data)
+                }
             }
 
             guard let document else {
@@ -129,7 +189,7 @@ final class UploadViewModel: ObservableObject {
             return
         }
 
-        guard let data = importedData,
+        guard let url = importedURL,
               let header = packageHeader,
               header.passwordProtected else {
             passwordError = "The package is no longer loaded."
@@ -139,10 +199,21 @@ final class UploadViewModel: ObservableObject {
         }
 
         do {
-            document = try JuanchoPackageCodec.decode(
-                data,
-                password: password
-            )
+            if header.formatVersion == 0 {
+                document = try LegacyJuanchoCodec.decode(
+                    packageURL: url,
+                    password: password
+                )
+            } else {
+                guard let data = importedData else {
+                    throw JuanchoPackageError.malformedPayload
+                }
+
+                document = try JuanchoPackageCodec.decode(
+                    data,
+                    password: password
+                )
+            }
 
             waitingForPassword = false
             passwordPrompt = false
@@ -158,7 +229,7 @@ final class UploadViewModel: ObservableObject {
             passwordError = error.localizedDescription
             waitingForPassword = true
             passwordPrompt = true
-            appendLog("Password rejected: (error.localizedDescription)")
+            appendLog("Password rejected: \(error.localizedDescription)")
         }
     }
 
@@ -174,13 +245,22 @@ final class UploadViewModel: ObservableObject {
         guard operationTask == nil else { return }
 
         guard isOfficialBuild else {
-            present(NSError(domain: "Juancho", code: 403, userInfo: [NSLocalizedDescriptionKey: "This is not an official Juancho Installer build."]))
+            present(
+                NSError(
+                    domain: "Juancho",
+                    code: 403,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "This is not an official Juancho Installer build."
+                    ]
+                )
+            )
             return
         }
 
         isBusy = true
         logLines = []
-        appendLog("Unpatching (patch.packageName)…")
+        appendLog("Unpatching \(patch.packageName)…")
 
         operationTask = Task { [weak self] in
             guard let self else { return }
@@ -215,9 +295,11 @@ final class UploadViewModel: ObservableObject {
 
         isBusy = true
         logLines = []
-        appendLog("Patching (document.header.projectName)…")
-        appendLog("Target Bundle ID: (document.header.targetBundleID)")
-        appendLog("Manifest: (document.manifest.rules.count) replacement file(s)")
+        appendLog("Patching \(document.header.projectName)…")
+        appendLog("Target Bundle ID: \(document.header.targetBundleID)")
+        appendLog(
+            "Manifest: \(document.manifest.rules.count) replacement file(s)"
+        )
         appendLog("Existing files will be backed up before replacement.")
 
         operationTask = Task { [weak self] in
@@ -232,7 +314,9 @@ final class UploadViewModel: ObservableObject {
             do {
                 let message = try self.patchStore.apply(document: document)
                 self.appendLog(message)
-                self.appendLog("Patch completed successfully. Backups are saved for Unpatch.")
+                self.appendLog(
+                    "Patch completed successfully. Backups are saved for Unpatch."
+                )
             } catch {
                 self.present(error)
             }
@@ -241,24 +325,56 @@ final class UploadViewModel: ObservableObject {
 
     private func readPackageForPatch() throws {
         let url = try resolveJuanchoURL()
-        let data = try Data(contentsOf: url)
-        let header = try JuanchoPackageCodec.readHeader(data)
+        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
 
-        importedData = data
         importedURL = url
-        packageHeader = header
-        packageHeader.map { _ in () }
+        importedData = data
         password = ""
         passwordError = ""
         document = nil
+        packageHeader = nil
+        waitingForPassword = false
 
-        appendLog("Patch requested. Reading package: (url.path)")
-        appendLog("Package: (header.projectName)")
-        appendLog("Bundle ID: (header.targetBundleID)")
-        appendLog("Password: \(header.passwordProtected ? "required" : "none")")
+        if LegacyJuanchoCodec.isLegacy7z(data) {
+            appendLog("Patch requested for legacy 7-Zip .juancho: \(url.path)")
 
-        if !header.passwordProtected {
-            document = try JuanchoPackageCodec.decode(data)
+            do {
+                document = try LegacyJuanchoCodec.decode(
+                    packageURL: url
+                )
+                packageHeader = document?.header
+                appendLog(
+                    "7-Zip package decoded: \(document?.manifest.rules.count ?? 0) file(s)."
+                )
+            } catch let error as LegacyJuanchoError {
+                if case .passwordRequired = error {
+                    packageHeader = LegacyJuanchoCodec.syntheticHeader(
+                        packageURL: url,
+                        passwordProtected: true
+                    )
+                    waitingForPassword = true
+                    passwordPrompt = true
+                    appendLog(
+                        "This 7-Zip .juancho requires a password. Waiting for input…"
+                    )
+                } else {
+                    throw error
+                }
+            }
+        } else {
+            let header = try JuanchoPackageCodec.readHeader(data)
+            packageHeader = header
+
+            appendLog("Patch requested. Reading package: \(url.path)")
+            appendLog("Package: \(header.projectName)")
+            appendLog("Bundle ID: \(header.targetBundleID)")
+            appendLog(
+                "Password: \(header.passwordProtected ? "required" : "none")"
+            )
+
+            if header.passwordProtected == false {
+                document = try JuanchoPackageCodec.decode(data)
+            }
         }
 
         checkTarget()
@@ -282,12 +398,12 @@ final class UploadViewModel: ObservableObject {
             )
 
             targetReady = true
-            targetStatus = "Target found. Base path: (base.path)"
-            appendLog("Target application found: (container.url.path)")
+            targetStatus = "Target found. Base path: \(base.path)"
+            appendLog("Target application found: \(container.url.path)")
         } catch {
             targetReady = false
             targetStatus = error.localizedDescription
-            appendLog("Target check: (error.localizedDescription)")
+            appendLog("Target check: \(error.localizedDescription)")
         }
     }
 
@@ -323,7 +439,7 @@ final class UploadViewModel: ObservableObject {
                 code: 201,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "Path does not exist: (input.path)"
+                        "Path does not exist: \(input.path)"
                 ]
             )
         }
@@ -369,7 +485,7 @@ final class UploadViewModel: ObservableObject {
                 code: 203,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "No .juancho package was found in: (input.path)"
+                        "No .juancho package was found in: \(input.path)"
                 ]
             )
         }
@@ -407,6 +523,7 @@ final class UploadViewModel: ObservableObject {
 
     private func appendLog(_ line: String) {
         logLines.append(line)
+
         if logLines.count > 2_000 {
             logLines.removeFirst(logLines.count - 2_000)
         }
@@ -415,6 +532,6 @@ final class UploadViewModel: ObservableObject {
     private func present(_ error: Error) {
         errorMessage = error.localizedDescription
         showingError = true
-        appendLog("Error: (error.localizedDescription)")
+        appendLog("Error: \(error.localizedDescription)")
     }
 }
