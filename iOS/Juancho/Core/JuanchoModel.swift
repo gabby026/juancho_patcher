@@ -9,12 +9,15 @@ final class JuanchoModel: ObservableObject {
     @Published var importedData: Data?
     @Published var importedURL: URL?
     @Published var packageURLs: [URL] = []
+    @Published var packagePath = ""
     @Published var errorMessage: String?
     @Published var passwordPrompt = false
     @Published var password = ""
     @Published var status = "Ready"
     @Published var accessStatus = "Not checked"
     @Published var isBusy = false
+
+    private var autoPatchAfterUnlock = false
 
     let patchStore = PatchStore()
 
@@ -69,7 +72,9 @@ final class JuanchoModel: ObservableObject {
                 options: [.skipsHiddenFiles]
             )
             .filter { $0.pathExtension.lowercased() == "juancho" }
-            .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
+            .sorted {
+                $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending
+            }
         } catch {
             errorMessage = "Could not load uploaded packages: \(error.localizedDescription)"
         }
@@ -100,6 +105,7 @@ final class JuanchoModel: ObservableObject {
 
             try FileManager.default.copyItem(at: url, to: destination)
             loadPackages()
+            packagePath = destination.path
             importURL(destination)
             status = "Uploaded \(filename)"
         } catch {
@@ -108,10 +114,30 @@ final class JuanchoModel: ObservableObject {
     }
 
     func selectStoredPackage(_ url: URL) {
+        packagePath = url.path
         importURL(url)
     }
 
-    func importURL(_ url: URL) {
+    /// Accept either:
+    /// 1. an absolute path directly to a .juancho file, or
+    /// 2. an absolute directory path containing exactly one .juancho file.
+    ///
+    /// The archive is decoded/decompressed in memory. Its payload is never
+    /// copied into the target application until PatchStore.apply() verifies it.
+    func loadPackageFromPath(autoPatch: Bool = false) {
+        let trimmed = packagePath.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        do {
+            let url = try resolveJuanchoURL(from: trimmed)
+            packagePath = url.path
+            importURL(url, autoPatch: autoPatch)
+        } catch {
+            errorMessage = error.localizedDescription
+            status = "Package path error"
+        }
+    }
+
+    func importURL(_ url: URL, autoPatch: Bool = false) {
         do {
             let data = try Data(contentsOf: url)
             let header = try JuanchoPackageCodec.readHeader(data)
@@ -121,15 +147,20 @@ final class JuanchoModel: ObservableObject {
             password = ""
             document = nil
             accessStatus = "Not checked"
+            autoPatchAfterUnlock = autoPatch
 
             if header.passwordProtected {
                 passwordPrompt = true
                 status = "Password required for \(header.projectName)"
             } else {
                 document = try JuanchoPackageCodec.decode(data)
-                status = "Imported \(header.projectName) — \(document?.manifest.rules.count ?? 0) files"
+                status = "Decompressed \(header.projectName) — \(document?.manifest.rules.count ?? 0) files"
+                if autoPatch {
+                    apply()
+                }
             }
         } catch {
+            autoPatchAfterUnlock = false
             errorMessage = error.localizedDescription
         }
     }
@@ -140,10 +171,93 @@ final class JuanchoModel: ObservableObject {
             document = try JuanchoPackageCodec.decode(data, password: password)
             passwordPrompt = false
             password = ""
-            status = "Unlocked \(document?.manifest.rules.count ?? 0) files"
+            status = "Decompressed and unlocked \(document?.manifest.rules.count ?? 0) files"
+
+            let shouldAutoPatch = autoPatchAfterUnlock
+            autoPatchAfterUnlock = false
+
+            if shouldAutoPatch {
+                apply()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func cancelPasswordPrompt() {
+        passwordPrompt = false
+        password = ""
+        autoPatchAfterUnlock = false
+    }
+
+    private func resolveJuanchoURL(from path: String) throws -> URL {
+        guard !path.isEmpty, path.hasPrefix("/") else {
+            throw NSError(
+                domain: "Juancho",
+                code: 200,
+                userInfo: [NSLocalizedDescriptionKey: "Enter an absolute path beginning with /."]
+            )
+        }
+
+        let input = URL(fileURLWithPath: path).standardizedFileURL
+        var isDirectory: ObjCBool = false
+
+        guard FileManager.default.fileExists(
+            atPath: input.path,
+            isDirectory: &isDirectory
+        ) else {
+            throw NSError(
+                domain: "Juancho",
+                code: 201,
+                userInfo: [NSLocalizedDescriptionKey: "Path does not exist: \(input.path)"]
+            )
+        }
+
+        if !isDirectory.boolValue {
+            guard input.pathExtension.lowercased() == "juancho" else {
+                throw NSError(
+                    domain: "Juancho",
+                    code: 202,
+                    userInfo: [NSLocalizedDescriptionKey: "Selected file is not a .juancho package."]
+                )
+            }
+            return input
+        }
+
+        let candidates = try FileManager.default.contentsOfDirectory(
+            at: input,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter { url in
+            guard url.pathExtension.lowercased() == "juancho" else { return false }
+            return (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+        }
+        .sorted {
+            $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending
+        }
+
+        guard !candidates.isEmpty else {
+            throw NSError(
+                domain: "Juancho",
+                code: 203,
+                userInfo: [NSLocalizedDescriptionKey: "No .juancho package was found in: \(input.path)"]
+            )
+        }
+
+        guard candidates.count == 1, let only = candidates.first else {
+            let names = candidates.prefix(8).map(\.lastPathComponent).joined(separator: "\n")
+            throw NSError(
+                domain: "Juancho",
+                code: 204,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Multiple .juancho packages were found. Enter the exact package path.\n\n\(names)"
+                ]
+            )
+        }
+
+        return only
     }
 
     func checkAccess() {
@@ -193,7 +307,10 @@ final class JuanchoModel: ObservableObject {
             var mismatches: [String] = []
 
             for rule in doc.manifest.rules {
-                let url = try FilesystemTarget.destinationURL(container: container, relativePath: rule.relativePath)
+                let url = try FilesystemTarget.destinationURL(
+                    container: container,
+                    relativePath: rule.relativePath
+                )
                 guard FileManager.default.fileExists(atPath: url.path) else {
                     mismatches.append("Missing: \(rule.relativePath)")
                     continue
