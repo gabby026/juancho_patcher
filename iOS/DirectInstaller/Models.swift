@@ -51,7 +51,7 @@ struct JuanchoDocument: Sendable {
 }
 
 struct PatchRecord: Codable, Sendable {
-    var id: String { "\(packageName)|\(bundleID)" }
+    var id: String { "(packageName)|(bundleID)" }
 
     var packageName: String
     var bundleID: String
@@ -63,5 +63,38 @@ struct PatchRecord: Codable, Sendable {
         var backupPath: String?
         var addedByPatch: Bool
         var expectedSHA256: String
+        var sourcePath: String?
+
+        enum CodingKeys: String, CodingKey {
+            case destination
+            case backupPath
+            case addedByPatch
+            case expectedSHA256
+            case sourcePath
+        }
+
+        init(
+            destination: String,
+            backupPath: String?,
+            addedByPatch: Bool,
+            expectedSHA256: String,
+            sourcePath: String? = nil
+        ) {
+            self.destination = destination
+            self.backupPath = backupPath
+            self.addedByPatch = addedByPatch
+            self.expectedSHA256 = expectedSHA256
+            self.sourcePath = sourcePath
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+
+            destination = try container.decode(String.self, forKey: .destination)
+            backupPath = try container.decodeIfPresent(String.self, forKey: .backupPath)
+            addedByPatch = try container.decode(Bool.self, forKey: .addedByPatch)
+            expectedSHA256 = try container.decode(String.self, forKey: .expectedSHA256)
+            sourcePath = try container.decodeIfPresent(String.self, forKey: .sourcePath)
+        }
     }
 }
