@@ -221,6 +221,10 @@ actor PatchManager {
         .sorted { $0.createdAt > $1.createdAt }
     }
 
+    func checkDestination(_ path: String) throws {
+        _ = try validatedDestinationURL(path)
+    }
+
     func patch(
         files: [LocalFile],
         sourcePath: String,
