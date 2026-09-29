@@ -70,10 +70,9 @@ jobs:
           set -euo pipefail
           test -f "iOS/Juancho/Core/JuanchoPackage.swift"
           grep -q "JUANCHO1" "iOS/Juancho/Core/JuanchoPackage.swift"
-          grep -q "PBKDF2-HMAC-SHA256" "iOS/Juancho/Core/Crypto.swift"
-          grep -q "Load & Patch" "iOS/Juancho/Views/ContentView.swift" || true
-          grep -q "loadPackageFromPath" "iOS/Juancho/Views/ContentView.swift"
+          grep -q "loadPackageFromPath" "iOS/Juancho/Core/JuanchoModel.swift"
           grep -q "passwordProtected" "iOS/Juancho/Core/JuanchoModel.swift"
+          grep -q "JuanchoPackageCodec.decode" "iOS/Juancho/Core/JuanchoModel.swift"
 
       - name: Package IPA
         run: |
