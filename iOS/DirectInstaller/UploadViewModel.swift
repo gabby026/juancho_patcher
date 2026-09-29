@@ -65,7 +65,7 @@ final class UploadViewModel: ObservableObject {
             appendLog("Read package: (url.path)")
             appendLog("Project: (header.projectName)")
             appendLog("Bundle ID: (header.targetBundleID)")
-            appendLog("Base path: (header.basePath.isEmpty ? "/" : header.basePath)")
+            appendLog("Base path: \(header.basePath.isEmpty ? "/" : header.basePath)")
 
             if header.passwordProtected {
                 document = nil
@@ -86,7 +86,7 @@ final class UploadViewModel: ObservableObject {
         guard !isBusy else { return }
 
         guard isOfficialBuild else {
-            present(InstallError.unofficialBuild)
+            present(NSError(domain: "Juancho", code: 403, userInfo: [NSLocalizedDescriptionKey: "This is not an official Juancho Installer build."]))
             return
         }
 
