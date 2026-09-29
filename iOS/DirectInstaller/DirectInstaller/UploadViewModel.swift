@@ -119,11 +119,10 @@ final class UploadViewModel: ObservableObject {
         defer { isCheckingDestination = false }
 
         do {
-            let installer = try DirectFileInstaller(destinationPath: destinationPath)
-            _ = installer
+            try await PatchManager.shared.checkDestination(destinationPath)
 
             destinationSucceeded = true
-            destinationStatus = "Destination is accessible."
+            destinationStatus = "Destination is accessible and writable."
             appendLog("Destination folder is ready: \(destinationPath)")
         } catch {
             destinationSucceeded = false
