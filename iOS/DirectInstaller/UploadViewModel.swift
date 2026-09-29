@@ -9,6 +9,7 @@ final class UploadViewModel: ObservableObject {
             UserDefaults.standard.set(sourcePath, forKey: Keys.sourcePath)
             if oldValue != sourcePath {
                 resetLoadedState()
+                resetSourceScan()
             }
         }
     }
@@ -21,6 +22,15 @@ final class UploadViewModel: ObservableObject {
     @Published private(set) var progress = 0.0
     @Published private(set) var processedFiles = 0
     @Published private(set) var totalFiles = 0
+
+    @Published private(set) var isScanningSource = false
+    @Published private(set) var sourceFileCount = 0
+    @Published private(set) var sourceFolderCount = 0
+    @Published private(set) var sourceTotalBytes: Int64 = 0
+    @Published private(set) var sourceType = ""
+    @Published private(set) var sourceScanned = false
+
+    @Published private(set) var logLines: [String] = []
     @Published var showingError = false
     @Published var errorMessage = ""
     @Published var passwordPrompt = false
@@ -47,7 +57,64 @@ final class UploadViewModel: ObservableObject {
     var canInject: Bool {
         !sourcePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !isBusy
+            && !isScanningSource
             && isOfficialBuild
+    }
+
+    var canScanSource: Bool {
+        !sourcePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !isBusy
+            && !isScanningSource
+    }
+
+    var formattedSourceSize: String {
+        ByteCountFormatter.string(
+            fromByteCount: sourceTotalBytes,
+            countStyle: .file
+        )
+    }
+
+    func scanSource() {
+        guard canScanSource else { return }
+
+        let requestedPath = sourcePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !requestedPath.isEmpty else { return }
+
+        isScanningSource = true
+        sourceScanned = false
+        sourceFileCount = 0
+        sourceFolderCount = 0
+        sourceTotalBytes = 0
+        sourceType = ""
+        appendLog("Scanning source…")
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try SourceInspector.inspect(path: requestedPath)
+                }.value
+
+                guard self.sourcePath.trimmingCharacters(in: .whitespacesAndNewlines) == requestedPath else {
+                    return
+                }
+
+                self.sourceFileCount = result.files
+                self.sourceFolderCount = result.folders
+                self.sourceTotalBytes = result.bytes
+                self.sourceType = result.type
+                self.sourceScanned = true
+                self.appendLog(
+                    "Scan complete: \(result.files) file(s), \(result.folders) folder(s), \(ByteCountFormatter.string(fromByteCount: result.bytes, countStyle: .file))."
+                )
+            } catch {
+                self.present(error)
+                self.appendLog("Scan failed.")
+            }
+
+            self.isScanningSource = false
+        }
     }
 
     func inject() {
@@ -71,6 +138,7 @@ final class UploadViewModel: ObservableObject {
         guard !requestedPath.isEmpty else { return }
 
         beginOperation(title: "Injecting")
+        appendLog("Preparing injection…")
 
         operationTask = Task { [weak self] in
             guard let self else { return }
@@ -83,7 +151,7 @@ final class UploadViewModel: ObservableObject {
             }
 
             do {
-                self.currentFile = "Preparing source…"
+                self.currentFile = "Reading source…"
 
                 let input = try await Task.detached(priority: .userInitiated) {
                     try SourceResolver.resolve(path: requestedPath)
@@ -93,6 +161,7 @@ final class UploadViewModel: ObservableObject {
 
                 switch input {
                 case .folder(let folderURL):
+                    self.appendLog("Using direct folder injection.")
                     self.currentFile = "Reading \(folderURL.lastPathComponent)…"
 
                     document = try await Task.detached(priority: .userInitiated) {
@@ -100,7 +169,8 @@ final class UploadViewModel: ObservableObject {
                     }.value
 
                 case .package(let packageURL):
-                    self.currentFile = "Reading \(packageURL.lastPathComponent)…"
+                    self.appendLog("Reading \(packageURL.lastPathComponent)…")
+                    self.currentFile = packageURL.lastPathComponent
 
                     let data = try await Task.detached(priority: .userInitiated) {
                         try Data(contentsOf: packageURL, options: [.mappedIfSafe])
@@ -117,11 +187,13 @@ final class UploadViewModel: ObservableObject {
                             document = try await Task.detached(priority: .userInitiated) {
                                 try LegacyJuanchoCodec.decode(packageURL: packageURL)
                             }.value
+                            self.appendLog("7-Zip package opened.")
                         } catch let error as LegacyJuanchoError {
                             guard case .passwordRequired = error else {
                                 throw error
                             }
 
+                            self.appendLog("Password required.")
                             self.waitingForPassword = true
                             self.passwordPrompt = true
                             self.isBusy = false
@@ -131,6 +203,7 @@ final class UploadViewModel: ObservableObject {
                         let header = try JuanchoPackageCodec.readHeader(data)
 
                         if header.passwordProtected {
+                            self.appendLog("Password required.")
                             self.waitingForPassword = true
                             self.passwordPrompt = true
                             self.isBusy = false
@@ -144,9 +217,10 @@ final class UploadViewModel: ObservableObject {
                 }
 
                 self.document = document
+                self.appendLog("\(document.manifest.rules.count) file(s) ready.")
                 try await performPatch(document)
             } catch is CancellationError {
-                return
+                self.appendLog("Injection cancelled.")
             } catch {
                 self.present(error)
             }
@@ -167,6 +241,7 @@ final class UploadViewModel: ObservableObject {
         passwordError = ""
         passwordPrompt = false
         beginOperation(title: "Injecting")
+        appendLog("Unlocking package…")
 
         operationTask = Task { [weak self] in
             guard let self else { return }
@@ -202,17 +277,19 @@ final class UploadViewModel: ObservableObject {
                 self.passwordError = error.localizedDescription
                 self.waitingForPassword = true
                 self.passwordPrompt = true
+                self.appendLog("Password rejected.")
                 return
             }
 
             self.waitingForPassword = false
             self.password = ""
             self.document = document
+            self.appendLog("Package unlocked: \(document.manifest.rules.count) file(s).")
 
             do {
                 try await performPatch(document)
             } catch is CancellationError {
-                return
+                self.appendLog("Injection cancelled.")
             } catch {
                 self.present(error)
             }
@@ -248,6 +325,7 @@ final class UploadViewModel: ObservableObject {
         beginOperation(title: "Unpatching")
         totalFiles = patch.entries.count
         currentFile = "Checking \(patch.packageName)…"
+        appendLog("Starting unpatch: \(patch.packageName)")
 
         operationTask = Task { [weak self] in
             guard let self else { return }
@@ -266,16 +344,23 @@ final class UploadViewModel: ObservableObject {
                     onProgress: { processed, total, path in
                         self.processedFiles = processed
                         self.totalFiles = total
-                        self.progress = total == 0 ? 1 : Double(processed) / Double(total)
+                        self.progress = total == 0
+                            ? 1
+                            : Double(processed) / Double(total)
                         self.currentFile = path
+
+                        if processed > 0 {
+                            self.appendLog("Unpatching \(processed)/\(total): \(path)")
+                        }
                     }
                 )
 
                 self.progress = 1
                 self.processedFiles = self.totalFiles
                 self.currentFile = "Done"
+                self.appendLog("Unpatch complete.")
             } catch is CancellationError {
-                return
+                self.appendLog("Unpatch cancelled.")
             } catch {
                 self.present(error)
             }
@@ -293,19 +378,28 @@ final class UploadViewModel: ObservableObject {
             ? "No files"
             : "Preparing \(totalFiles) files…"
 
+        appendLog("Injecting \(totalFiles) file(s)…")
+
         _ = try await patchStore.apply(
             document: document,
             onProgress: { processed, total, path in
                 self.processedFiles = processed
                 self.totalFiles = total
-                self.progress = total == 0 ? 1 : Double(processed) / Double(total)
+                self.progress = total == 0
+                    ? 1
+                    : Double(processed) / Double(total)
                 self.currentFile = path
+
+                if processed > 0 {
+                    self.appendLog("Injected \(processed)/\(total): \(path)")
+                }
             }
         )
 
         progress = 1
         processedFiles = totalFiles
         currentFile = "Done"
+        appendLog("Injection complete.")
     }
 
     private func beginOperation(title: String) {
@@ -333,11 +427,131 @@ final class UploadViewModel: ObservableObject {
         waitingForPassword = false
     }
 
+    private func resetSourceScan() {
+        isScanningSource = false
+        sourceFileCount = 0
+        sourceFolderCount = 0
+        sourceTotalBytes = 0
+        sourceType = ""
+        sourceScanned = false
+    }
+
+    private func appendLog(_ line: String) {
+        logLines.append(line)
+        if logLines.count > 300 {
+            logLines.removeFirst(logLines.count - 300)
+        }
+    }
+
     private func present(_ error: Error) {
         errorMessage = error.localizedDescription
         showingError = true
     }
+}
 
+private struct SourceScanResult: Sendable {
+    let files: Int
+    let folders: Int
+    let bytes: Int64
+    let type: String
+}
+
+private enum SourceInspector {
+    static func inspect(path: String) throws -> SourceScanResult {
+        guard path.hasPrefix("/") else {
+            throw NSError(
+                domain: "Juancho",
+                code: 200,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Enter an absolute source path."
+                ]
+            )
+        }
+
+        let input = URL(fileURLWithPath: path).standardizedFileURL
+        var isDirectory: ObjCBool = false
+
+        guard FileManager.default.fileExists(
+            atPath: input.path,
+            isDirectory: &isDirectory
+        ) else {
+            throw NSError(
+                domain: "Juancho",
+                code: 201,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Source path does not exist."
+                ]
+            )
+        }
+
+        if !isDirectory.boolValue {
+            let values = try input.resourceValues(forKeys: [.fileSizeKey])
+            return SourceScanResult(
+                files: 1,
+                folders: 0,
+                bytes: Int64(values.fileSize ?? 0),
+                type: input.pathExtension.isEmpty
+                    ? "File"
+                    : input.pathExtension.uppercased()
+            )
+        }
+
+        var files = 0
+        var folders = 0
+        var bytes: Int64 = 0
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: input,
+            includingPropertiesForKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .fileSizeKey
+            ],
+            options: [.skipsHiddenFiles]
+        ) else {
+            throw NSError(
+                domain: "Juancho",
+                code: 205,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Unable to read the source folder."
+                ]
+            )
+        }
+
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(
+                forKeys: [
+                    .isDirectoryKey,
+                    .isRegularFileKey,
+                    .isSymbolicLinkKey,
+                    .fileSizeKey
+                ]
+            )
+
+            if values.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+
+            if values.isDirectory == true {
+                folders += 1
+            } else if values.isRegularFile == true {
+                files += 1
+                bytes += Int64(values.fileSize ?? 0)
+            }
+        }
+
+        return SourceScanResult(
+            files: files,
+            folders: folders,
+            bytes: bytes,
+            type: "Folder"
+        )
+    }
 }
 
 private enum SourceInput: Sendable {
@@ -491,7 +705,10 @@ private enum PlainFolderBuilder {
                 )
             }
 
-            let data = try Data(contentsOf: resolved, options: [.mappedIfSafe])
+            let data = try Data(
+                contentsOf: resolved,
+                options: [.mappedIfSafe]
+            )
             let destination = defaultBasePath + "/" + relative
             let filename = URL(fileURLWithPath: relative).lastPathComponent
 
