@@ -51,6 +51,8 @@ struct JuanchoDocument {
 }
 
 struct PatchRecord: Codable {
+    var id: String { "\(packageName)|\(bundleID)" }
+
     var packageName: String
     var bundleID: String
     var appliedAt: Date
