@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Foundation
 
 @MainActor
@@ -7,23 +8,23 @@ final class UploadViewModel: ObservableObject {
         didSet {
             UserDefaults.standard.set(sourcePath, forKey: Keys.sourcePath)
             if oldValue != sourcePath {
-                clearLoadedPackage()
+                resetLoadedState()
             }
         }
     }
 
-    @Published private(set) var packageHeader: JuanchoPackageHeader?
-    @Published private(set) var document: JuanchoDocument?
     @Published private(set) var activePatches: [PatchRecord] = []
-    @Published private(set) var targetStatus: String?
-    @Published private(set) var targetReady = false
     @Published private(set) var isBusy = false
+    @Published private(set) var operationTitle = ""
+    @Published private(set) var currentFile = ""
+    @Published private(set) var progress = 0.0
+    @Published private(set) var processedFiles = 0
+    @Published private(set) var totalFiles = 0
     @Published var showingError = false
     @Published var errorMessage = ""
     @Published var passwordPrompt = false
     @Published var password = ""
     @Published var passwordError = ""
-    @Published private(set) var logLines: [String] = []
     @Published private(set) var isOfficialBuild = true
 
     private let patchStore = PatchStore()
@@ -42,86 +43,14 @@ final class UploadViewModel: ObservableObject {
         refreshPatches()
     }
 
-    var canPatch: Bool {
+    var canInject: Bool {
         !sourcePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !isBusy
             && isOfficialBuild
     }
 
-    func loadPackage() {
-        do {
-            let url = try resolveJuanchoURL()
-            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-
-            importedURL = url
-            importedData = data
-            password = ""
-            passwordError = ""
-            waitingForPassword = false
-            targetReady = false
-            targetStatus = nil
-            document = nil
-            packageHeader = nil
-
-            if LegacyJuanchoCodec.isLegacy7z(data) {
-                appendLog("Detected legacy 7-Zip .juancho package.")
-                appendLog("Package file: \(url.path)")
-                appendLog("Target: \(LegacyJuanchoCodec.defaultBundleID)")
-                appendLog("Base path: \(LegacyJuanchoCodec.defaultBasePath)")
-
-                do {
-                    document = try LegacyJuanchoCodec.decode(
-                        packageURL: url
-                    )
-                    packageHeader = document?.header
-                    appendLog(
-                        "7-Zip package decoded: \(document?.manifest.rules.count ?? 0) file(s)."
-                    )
-                } catch let error as LegacyJuanchoError {
-                    if case .passwordRequired = error {
-                        packageHeader = LegacyJuanchoCodec.syntheticHeader(
-                            packageURL: url,
-                            passwordProtected: true
-                        )
-                        appendLog(
-                            "7-Zip package is password protected. Password will be requested only when Patch Files is pressed."
-                        )
-                    } else {
-                        throw error
-                    }
-                }
-            } else {
-                let header = try JuanchoPackageCodec.readHeader(data)
-                packageHeader = header
-
-                appendLog("Read JUANCHO package: \(url.path)")
-                appendLog("Project: \(header.projectName)")
-                appendLog("Bundle ID: \(header.targetBundleID)")
-                appendLog(
-                    "Base path: \(header.basePath.isEmpty ? "/" : header.basePath)"
-                )
-
-                if header.passwordProtected {
-                    appendLog(
-                        "Package is password protected. Password will be requested only when Patch Files is pressed."
-                    )
-                } else {
-                    document = try JuanchoPackageCodec.decode(data)
-                    appendLog(
-                        "Package decoded: \(document?.manifest.rules.count ?? 0) replacement file(s)."
-                    )
-                }
-            }
-
-            checkTarget()
-        } catch {
-            clearLoadedPackage()
-            present(error)
-        }
-    }
-
-    func patchFiles() {
-        guard !isBusy else { return }
+    func inject() {
+        guard operationTask == nil, !isBusy else { return }
 
         guard isOfficialBuild else {
             present(
@@ -137,99 +66,156 @@ final class UploadViewModel: ObservableObject {
             return
         }
 
-        do {
-            if packageHeader == nil || importedURL == nil {
-                try readPackageForPatch()
-                if passwordPrompt {
-                    return
-                }
+        let requestedPath = sourcePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !requestedPath.isEmpty else { return }
+
+        beginOperation(title: "Injecting")
+
+        operationTask = Task { [weak self] in
+            guard let self else { return }
+
+            defer {
+                self.isBusy = false
+                self.operationTask = nil
+                self.currentFile = ""
+                self.refreshPatches()
             }
 
-            guard let header = packageHeader else {
-                throw JuanchoPackageError.malformedHeader
-            }
+            do {
+                self.currentFile = "Preparing source…"
 
-            if document == nil {
-                if header.passwordProtected {
-                    waitingForPassword = true
-                    password = ""
-                    passwordError = ""
-                    passwordPrompt = true
-                    appendLog("Password required. Waiting for input…")
-                    return
+                let input = try await Task.detached(priority: .userInitiated) {
+                    try SourceResolver.resolve(path: requestedPath)
+                }.value
+
+                let document: JuanchoDocument
+
+                switch input {
+                case .folder(let folderURL):
+                    self.currentFile = "Reading (folderURL.lastPathComponent)…"
+                    document = try await Task.detached(priority: .userInitiated) {
+                        try PlainFolderBuilder.document(folderURL: folderURL)
+                    }.value
+
+                case .package(let packageURL):
+                    self.currentFile = "Reading (packageURL.lastPathComponent)…"
+
+                    let data = try await Task.detached(priority: .userInitiated) {
+                        try Data(contentsOf: packageURL, options: [.mappedIfSafe])
+                    }.value
+
+                    self.importedURL = packageURL
+                    self.importedData = data
+                    self.password = ""
+                    self.passwordError = ""
+                    self.waitingForPassword = false
+
+                    if LegacyJuanchoCodec.isLegacy7z(data) {
+                        do {
+                            document = try await Task.detached(priority: .userInitiated) {
+                                try LegacyJuanchoCodec.decode(packageURL: packageURL)
+                            }.value
+                        } catch let error as LegacyJuanchoError {
+                            guard case .passwordRequired = error else {
+                                throw error
+                            }
+
+                            self.packageHeader = nil
+                            self.waitingForPassword = true
+                            self.passwordPrompt = true
+                            self.isBusy = false
+                            return
+                        }
+                    } else {
+                        let header = try JuanchoPackageCodec.readHeader(data)
+                        if header.passwordProtected {
+                            self.packageHeader = header
+                            self.waitingForPassword = true
+                            self.passwordPrompt = true
+                            self.isBusy = false
+                            return
+                        }
+
+                        document = try await Task.detached(priority: .userInitiated) {
+                            try JuanchoPackageCodec.decode(data)
+                        }.value
+                    }
                 }
 
-                guard let data = importedData else {
-                    throw JuanchoPackageError.malformedPayload
-                }
-
-                if header.formatVersion == 0,
-                   let url = importedURL {
-                    document = try LegacyJuanchoCodec.decode(
-                        packageURL: url
-                    )
-                } else {
-                    document = try JuanchoPackageCodec.decode(data)
-                }
+                self.document = document
+                self.importedURL = self.importedURL
+                try await performPatch(document)
+            } catch is CancellationError {
+                return
+            } catch {
+                self.present(error)
             }
-
-            guard let document else {
-                throw JuanchoPackageError.malformedPayload
-            }
-
-            beginPatch(document)
-        } catch {
-            present(error)
         }
     }
 
-    func unlockAndPatch() {
-        guard waitingForPassword else {
+    func unlockAndInject() {
+        guard waitingForPassword,
+              let url = importedURL,
+              let data = importedData
+        else {
             passwordPrompt = false
-            return
-        }
-
-        guard let url = importedURL,
-              let header = packageHeader,
-              header.passwordProtected else {
-            passwordError = "The package is no longer loaded."
             waitingForPassword = false
-            passwordPrompt = false
             return
         }
 
-        do {
-            if header.formatVersion == 0 {
-                document = try LegacyJuanchoCodec.decode(
-                    packageURL: url,
-                    password: password
-                )
-            } else {
-                guard let data = importedData else {
-                    throw JuanchoPackageError.malformedPayload
+        let suppliedPassword = password
+        passwordError = ""
+        passwordPrompt = false
+        beginOperation(title: "Injecting")
+
+        operationTask = Task { [weak self] in
+            guard let self else { return }
+
+            defer {
+                self.isBusy = false
+                self.operationTask = nil
+                self.currentFile = ""
+                self.refreshPatches()
+            }
+
+            let document: JuanchoDocument
+
+            do {
+                self.currentFile = "Unlocking package…"
+
+                if LegacyJuanchoCodec.isLegacy7z(data) {
+                    document = try await Task.detached(priority: .userInitiated) {
+                        try LegacyJuanchoCodec.decode(
+                            packageURL: url,
+                            password: suppliedPassword
+                        )
+                    }.value
+                } else {
+                    document = try await Task.detached(priority: .userInitiated) {
+                        try JuanchoPackageCodec.decode(
+                            data,
+                            password: suppliedPassword
+                        )
+                    }.value
                 }
-
-                document = try JuanchoPackageCodec.decode(
-                    data,
-                    password: password
-                )
+            } catch {
+                self.passwordError = error.localizedDescription
+                self.waitingForPassword = true
+                self.passwordPrompt = true
+                return
             }
 
-            waitingForPassword = false
-            passwordPrompt = false
-            passwordError = ""
-            appendLog("Password accepted. Starting patch…")
+            self.waitingForPassword = false
+            self.password = ""
+            self.document = document
 
-            guard let document else {
-                throw JuanchoPackageError.malformedPayload
+            do {
+                try await performPatch(document)
+            } catch is CancellationError {
+                return
+            } catch {
+                self.present(error)
             }
-
-            beginPatch(document)
-        } catch {
-            passwordError = error.localizedDescription
-            waitingForPassword = true
-            passwordPrompt = true
-            appendLog("Password rejected: \(error.localizedDescription)")
         }
     }
 
@@ -238,11 +224,12 @@ final class UploadViewModel: ObservableObject {
         passwordPrompt = false
         password = ""
         passwordError = ""
-        appendLog("Patch cancelled at password prompt.")
+        importedData = nil
+        importedURL = nil
     }
 
-    func unpatch(_ patch: PatchRecord) async {
-        guard operationTask == nil else { return }
+    func unpatch(_ patch: PatchRecord) {
+        guard operationTask == nil, !isBusy else { return }
 
         guard isOfficialBuild else {
             present(
@@ -258,9 +245,9 @@ final class UploadViewModel: ObservableObject {
             return
         }
 
-        isBusy = true
-        logLines = []
-        appendLog("Unpatching \(patch.packageName)…")
+        beginOperation(title: "Unpatching")
+        totalFiles = patch.entries.count
+        currentFile = "Checking (patch.packageName)…"
 
         operationTask = Task { [weak self] in
             guard let self else { return }
@@ -268,143 +255,66 @@ final class UploadViewModel: ObservableObject {
             defer {
                 self.isBusy = false
                 self.operationTask = nil
+                self.currentFile = ""
                 self.refreshPatches()
             }
 
             do {
-                let message = try self.patchStore.unpatch(
+                let message = try await self.patchStore.unpatch(
                     projectName: patch.packageName,
-                    bundleID: patch.bundleID
+                    bundleID: patch.bundleID,
+                    onProgress: { processed, total, path in
+                        self.processedFiles = processed
+                        self.totalFiles = total
+                        self.progress = total == 0 ? 1 : Double(processed) / Double(total)
+                        self.currentFile = path
+                    }
                 )
 
-                self.appendLog(message)
+                self.progress = 1
+                self.processedFiles = self.totalFiles
+                self.currentFile = "Done"
+                _ = message
+            } catch is CancellationError {
+                return
             } catch {
                 self.present(error)
             }
         }
-
-        await operationTask?.value
     }
 
     func cancelOperation() {
         operationTask?.cancel()
     }
 
-    private func beginPatch(_ document: JuanchoDocument) {
-        guard operationTask == nil else { return }
+    private func performPatch(_ document: JuanchoDocument) async throws {
+        beginOperation(title: "Injecting")
+        totalFiles = document.manifest.rules.count
+        currentFile = totalFiles == 0 ? "No files" : "Preparing (totalFiles) files…"
 
-        isBusy = true
-        logLines = []
-        appendLog("Patching \(document.header.projectName)…")
-        appendLog("Target Bundle ID: \(document.header.targetBundleID)")
-        appendLog(
-            "Manifest: \(document.manifest.rules.count) replacement file(s)"
+        let message = try await patchStore.apply(
+            document: document,
+            onProgress: { processed, total, path in
+                self.processedFiles = processed
+                self.totalFiles = total
+                self.progress = total == 0 ? 1 : Double(processed) / Double(total)
+                self.currentFile = path
+            }
         )
-        appendLog("Existing files will be backed up before replacement.")
 
-        operationTask = Task { [weak self] in
-            guard let self else { return }
-
-            defer {
-                self.isBusy = false
-                self.operationTask = nil
-                self.refreshPatches()
-            }
-
-            do {
-                let message = try self.patchStore.apply(document: document)
-                self.appendLog(message)
-                self.appendLog(
-                    "Patch completed successfully. Backups are saved for Unpatch."
-                )
-            } catch {
-                self.present(error)
-            }
-        }
+        progress = 1
+        processedFiles = totalFiles
+        currentFile = "Done"
+        _ = message
     }
 
-    private func readPackageForPatch() throws {
-        let url = try resolveJuanchoURL()
-        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-
-        importedURL = url
-        importedData = data
-        password = ""
-        passwordError = ""
-        document = nil
-        packageHeader = nil
-        waitingForPassword = false
-
-        if LegacyJuanchoCodec.isLegacy7z(data) {
-            appendLog("Patch requested for legacy 7-Zip .juancho: \(url.path)")
-
-            do {
-                document = try LegacyJuanchoCodec.decode(
-                    packageURL: url
-                )
-                packageHeader = document?.header
-                appendLog(
-                    "7-Zip package decoded: \(document?.manifest.rules.count ?? 0) file(s)."
-                )
-            } catch let error as LegacyJuanchoError {
-                if case .passwordRequired = error {
-                    packageHeader = LegacyJuanchoCodec.syntheticHeader(
-                        packageURL: url,
-                        passwordProtected: true
-                    )
-                    waitingForPassword = true
-                    passwordPrompt = true
-                    appendLog(
-                        "This 7-Zip .juancho requires a password. Waiting for input…"
-                    )
-                } else {
-                    throw error
-                }
-            }
-        } else {
-            let header = try JuanchoPackageCodec.readHeader(data)
-            packageHeader = header
-
-            appendLog("Patch requested. Reading package: \(url.path)")
-            appendLog("Package: \(header.projectName)")
-            appendLog("Bundle ID: \(header.targetBundleID)")
-            appendLog(
-                "Password: \(header.passwordProtected ? "required" : "none")"
-            )
-
-            if header.passwordProtected == false {
-                document = try JuanchoPackageCodec.decode(data)
-            }
-        }
-
-        checkTarget()
-    }
-
-    private func checkTarget() {
-        guard let header = packageHeader else {
-            targetStatus = nil
-            targetReady = false
-            return
-        }
-
-        do {
-            let container = try FilesystemTarget.locateApplication(
-                bundleID: header.targetBundleID
-            )
-
-            let base = try FilesystemTarget.destinationURL(
-                container: container,
-                relativePath: header.basePath
-            )
-
-            targetReady = true
-            targetStatus = "Target found. Base path: \(base.path)"
-            appendLog("Target application found: \(container.url.path)")
-        } catch {
-            targetReady = false
-            targetStatus = error.localizedDescription
-            appendLog("Target check: \(error.localizedDescription)")
-        }
+    private func beginOperation(title: String) {
+        isBusy = true
+        operationTitle = title
+        currentFile = ""
+        progress = 0
+        processedFiles = 0
+        totalFiles = 0
     }
 
     private func refreshPatches() {
@@ -413,21 +323,41 @@ final class UploadViewModel: ObservableObject {
         }
     }
 
-    private func resolveJuanchoURL() throws -> URL {
-        let trimmed = sourcePath.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func resetLoadedState() {
+        document = nil
+        importedData = nil
+        importedURL = nil
+        passwordPrompt = false
+        password = ""
+        passwordError = ""
+        waitingForPassword = false
+    }
 
-        guard !trimmed.isEmpty, trimmed.hasPrefix("/") else {
+    private func present(_ error: Error) {
+        errorMessage = error.localizedDescription
+        showingError = true
+    }
+}
+
+private enum SourceInput: Sendable {
+    case package(URL)
+    case folder(URL)
+}
+
+private enum SourceResolver {
+    static func resolve(path: String) throws -> SourceInput {
+        guard path.hasPrefix("/") else {
             throw NSError(
                 domain: "Juancho",
                 code: 200,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "Enter an absolute path beginning with /."
+                        "Enter an absolute source path."
                 ]
             )
         }
 
-        let input = URL(fileURLWithPath: trimmed).standardizedFileURL
+        let input = URL(fileURLWithPath: path).standardizedFileURL
         var isDirectory: ObjCBool = false
 
         guard FileManager.default.fileExists(
@@ -439,7 +369,7 @@ final class UploadViewModel: ObservableObject {
                 code: 201,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "Path does not exist: \(input.path)"
+                        "Source path does not exist."
                 ]
             )
         }
@@ -451,12 +381,12 @@ final class UploadViewModel: ObservableObject {
                     code: 202,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "Selected file is not a .juancho package."
+                            "Select a .juancho file or a source folder."
                     ]
                 )
             }
 
-            return input
+            return .package(input)
         }
 
         let candidates = try FileManager.default.contentsOfDirectory(
@@ -479,59 +409,164 @@ final class UploadViewModel: ObservableObject {
             ) == .orderedAscending
         }
 
-        guard !candidates.isEmpty else {
-            throw NSError(
-                domain: "Juancho",
-                code: 203,
-                userInfo: [
-                    NSLocalizedDescriptionKey:
-                        "No .juancho package was found in: \(input.path)"
-                ]
-            )
+        if candidates.count == 1, let only = candidates.first {
+            return .package(only)
         }
 
-        guard candidates.count == 1, let only = candidates.first else {
-            let names = candidates.prefix(8)
-                .map(\.lastPathComponent)
-                .joined(separator: "\n")
-
+        if candidates.count > 1 {
             throw NSError(
                 domain: "Juancho",
                 code: 204,
                 userInfo: [
                     NSLocalizedDescriptionKey:
-                        "Multiple .juancho packages were found. Enter the exact package path.\n\n\(names)"
+                        "More than one .juancho package was found in the selected folder."
                 ]
             )
         }
 
-        return only
+        return .folder(input)
     }
+}
 
-    private func clearLoadedPackage() {
-        packageHeader = nil
-        document = nil
-        importedData = nil
-        importedURL = nil
-        targetStatus = nil
-        targetReady = false
-        passwordPrompt = false
-        password = ""
-        passwordError = ""
-        waitingForPassword = false
-    }
+private enum PlainFolderBuilder {
+    static let defaultBundleID = LegacyJuanchoCodec.defaultBundleID
+    static let defaultBasePath = LegacyJuanchoCodec.defaultBasePath
 
-    private func appendLog(_ line: String) {
-        logLines.append(line)
+    static func document(folderURL: URL) throws -> JuanchoDocument {
+        let sourceRoot = folderURL.resolvingSymlinksInPath().standardizedFileURL
+        let sourcePath = sourceRoot.path
+        let prefix = sourcePath.hasSuffix("/") ? sourcePath : sourcePath + "/"
 
-        if logLines.count > 2_000 {
-            logLines.removeFirst(logLines.count - 2_000)
+        var files: [JuanchoFile] = []
+        var rules: [JuanchoRule] = []
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: sourceRoot,
+            includingPropertiesForKeys: [
+                .isRegularFileKey,
+                .isSymbolicLinkKey
+            ],
+            options: [.skipsHiddenFiles]
+        ) else {
+            throw NSError(
+                domain: "Juancho",
+                code: 205,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Unable to read the source folder."
+                ]
+            )
         }
+
+        for case let fileURL as URL in enumerator {
+            let values = try fileURL.resourceValues(
+                forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+            )
+
+            guard values.isRegularFile == true,
+                  values.isSymbolicLink != true else {
+                continue
+            }
+
+            let resolved = fileURL.resolvingSymlinksInPath().standardizedFileURL
+            guard resolved.path.hasPrefix(prefix) else {
+                continue
+            }
+
+            let relative = String(resolved.path.dropFirst(prefix.count))
+                .replacingOccurrences(of: "\", with: "/")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+            guard !relative.isEmpty,
+                  !relative.split(separator: "/").contains(".."),
+                  !relative.contains(":") else {
+                throw NSError(
+                    domain: "Juancho",
+                    code: 206,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Unsafe source file path: (relative)"
+                    ]
+                )
+            }
+
+            let data = try Data(contentsOf: resolved, options: [.mappedIfSafe])
+            let destination = defaultBasePath + "/" + relative
+            let filename = URL(fileURLWithPath: relative).lastPathComponent
+
+            files.append(
+                JuanchoFile(
+                    path: relative,
+                    data: data
+                )
+            )
+
+            rules.append(
+                JuanchoRule(
+                    operation: "replace",
+                    containerKind: "application",
+                    bundleID: defaultBundleID,
+                    relativePath: destination,
+                    replacementFilename: filename,
+                    size: data.count,
+                    sha256: sha256(data),
+                    canRemove: true
+                )
+            )
+        }
+
+        guard !files.isEmpty else {
+            throw NSError(
+                domain: "Juancho",
+                code: 207,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "The source folder contains no files."
+                ]
+            )
+        }
+
+        let name = sourceRoot.lastPathComponent.isEmpty
+            ? "Folder Patch"
+            : sourceRoot.lastPathComponent
+
+        let header = JuanchoPackageHeader(
+            formatVersion: 0,
+            projectName: name,
+            targetBundleID: defaultBundleID,
+            basePath: defaultBasePath,
+            passwordProtected: false,
+            compression: "folder",
+            payloadEncoding: "filesystem",
+            payloadUncompressedSize: 0,
+            payloadCompressedSize: 0,
+            payloadSHA256: "",
+            createdAt: ISO8601DateFormatter().string(from: Date()),
+            kdf: nil,
+            kdfIterations: nil,
+            salt: nil,
+            nonce: nil,
+            aad: nil
+        )
+
+        let manifest = JuanchoManifest(
+            formatVersion: 0,
+            projectName: name,
+            bundleIdentifiers: [defaultBundleID],
+            directories: [],
+            rules: rules
+        )
+
+        return JuanchoDocument(
+            header: header,
+            manifest: manifest,
+            files: files
+        )
     }
 
-    private func present(_ error: Error) {
-        errorMessage = error.localizedDescription
-        showingError = true
-        appendLog("Error: \(error.localizedDescription)")
+    private static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
