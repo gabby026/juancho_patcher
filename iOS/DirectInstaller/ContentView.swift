@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var model = UploadViewModel()
     @FocusState private var focusedField: Bool
+    @State private var showingTargetPaths = false
 
     var body: some View {
         NavigationStack {
@@ -23,6 +24,18 @@ struct ContentView: View {
                         Spacer()
                         Button("Done") { focusedField = false }
                     }
+
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            focusedField = false
+                            showingTargetPaths = true
+                            model.loadTargetPath()
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.title3.weight(.bold))
+                        }
+                        .accessibilityLabel("Target paths")
+                    }
                 }
 
                 if model.isBusy {
@@ -42,6 +55,11 @@ struct ContentView: View {
                         ? "Enter the package password."
                         : model.passwordError
                 )
+            }
+            .sheet(isPresented: $showingTargetPaths) {
+                TargetPathSheet(model: model)
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
             }
             .alert("Juancho Installer", isPresented: $model.showingError) {
                 Button("OK", role: .cancel) {
@@ -382,6 +400,91 @@ private struct CatalogStat: View {
             Color(uiColor: .tertiarySystemGroupedBackground),
             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
+    }
+}
+
+
+private struct TargetPathSheet: View {
+    @ObservedObject var model: UploadViewModel
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    TargetPathBlock(
+                        title: "Game Container",
+                        icon: "iphone.gen3",
+                        value: model.targetContainerPath.isEmpty
+                            ? (model.targetPathLoading ? "Finding…" : "Not found")
+                            : model.targetContainerPath
+                    )
+
+                    TargetPathBlock(
+                        title: "Patch Destination",
+                        icon: "folder.fill",
+                        value: model.targetAssetsPath.isEmpty
+                            ? (model.targetPathLoading ? "Finding…" : "Not found")
+                            : model.targetAssetsPath
+                    )
+
+                    if !model.targetPathMessage.isEmpty {
+                        Text(model.targetPathMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Target Paths")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Refresh") {
+                        model.loadTargetPath()
+                    }
+                    .disabled(model.targetPathLoading)
+                }
+            }
+            .overlay {
+                if model.targetPathLoading {
+                    ProgressView()
+                        .padding(20)
+                        .background(
+                            .regularMaterial,
+                            in: RoundedRectangle(
+                                cornerRadius: 16,
+                                style: .continuous
+                            )
+                        )
+                }
+            }
+        }
+    }
+}
+
+private struct TargetPathBlock: View {
+    let title: String
+    let icon: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+
+            Text(value)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(
+                        cornerRadius: 12,
+                        style: .continuous
+                    )
+                )
+        }
     }
 }
 
