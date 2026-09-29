@@ -73,16 +73,3 @@ jobs:
           name: Juancho-Installer-Filza-IPA
           path: ipa/Juancho-Installer-Filza.ipa
           if-no-files-found: error
-
-      - name: Publish verified IPA bridge
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p ci-output
-          base64 < ipa/Juancho-Installer-Filza.ipa | tr -d '\n' > ci-output/Juancho-Installer-Filza.ipa.b64
-          sha256sum ipa/Juancho-Installer-Filza.ipa > ci-output/Juancho-Installer-Filza.ipa.sha256
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ci-output/Juancho-Installer-Filza.ipa.b64 ci-output/Juancho-Installer-Filza.ipa.sha256
-          git commit -m "ci: publish verified Juancho Installer IPA [skip ci]" || true
-          git push origin HEAD:main
