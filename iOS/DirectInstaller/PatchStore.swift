@@ -155,7 +155,7 @@ final class PatchStore: ObservableObject {
         bundleID: String,
         onProgress: @escaping (_ processed: Int, _ total: Int, _ path: String) -> Void
     ) async throws -> String {
-        let projectKey = "\(projectName)|\(bundleID)"
+        let projectKey = "(projectName)|(bundleID)"
 
         guard let record = activeRecords[projectKey] else {
             throw patchError(
@@ -171,7 +171,9 @@ final class PatchStore: ObservableObject {
         let fm = FileManager.default
         let total = record.entries.count
 
-        for entry in record.entries {
+        // The backup captured during Inject is the source of truth for Unpatch.
+        // Do not reject restoration just because the live patched file has changed.
+        for (index, entry) in record.entries.enumerated() {
             try Task.checkCancellation()
 
             let dest = try FilesystemTarget.destinationURL(
@@ -179,50 +181,38 @@ final class PatchStore: ObservableObject {
                 relativePath: entry.destination
             )
 
-            onProgress(0, total, "Checking \(entry.destination)")
+            onProgress(
+                index,
+                total,
+                "Preparing (entry.destination)"
+            )
             await Task.yield()
 
             if entry.addedByPatch {
-                if fm.fileExists(atPath: dest.path) {
-                    let current = try Data(contentsOf: dest)
+                // The file did not exist before Inject, so Unpatch removes it.
+                // It is intentionally not hash-checked.
+                continue
+            }
 
-                    guard sha256(current) == entry.expectedSHA256 else {
-                        throw patchError(
-                            104,
-                            "Refusing to remove modified file: \(entry.destination)"
-                        )
-                    }
-                }
-            } else {
-                guard let backupPath = entry.backupPath else {
-                    throw patchError(
-                        105,
-                        "Missing backup for \(entry.destination)"
-                    )
-                }
+            guard let backupPath = entry.backupPath else {
+                throw patchError(
+                    105,
+                    "Missing backup for (entry.destination)"
+                )
+            }
 
-                guard fm.fileExists(atPath: dest.path) else {
-                    throw patchError(
-                        106,
-                        "Patched file is missing: \(entry.destination)"
-                    )
-                }
+            guard fm.fileExists(atPath: backupPath) else {
+                throw patchError(
+                    107,
+                    "Backup is missing for (entry.destination)"
+                )
+            }
 
-                let current = try Data(contentsOf: dest)
-
-                guard sha256(current) == entry.expectedSHA256 else {
-                    throw patchError(
-                        104,
-                        "Refusing to overwrite modified file: \(entry.destination)"
-                    )
-                }
-
-                guard fm.fileExists(atPath: backupPath) else {
-                    throw patchError(
-                        107,
-                        "Backup is missing for \(entry.destination)"
-                    )
-                }
+            if !fm.fileExists(atPath: dest.path) {
+                try fm.createDirectory(
+                    at: dest.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
             }
         }
 
@@ -236,7 +226,11 @@ final class PatchStore: ObservableObject {
                 relativePath: entry.destination
             )
 
-            onProgress(restored, total, entry.destination)
+            onProgress(
+                restored,
+                total,
+                entry.destination
+            )
             await Task.yield()
 
             if let backupPath = entry.backupPath {
@@ -261,14 +255,18 @@ final class PatchStore: ObservableObject {
                 restored += 1
             }
 
-            onProgress(restored, total, entry.destination)
+            onProgress(
+                restored,
+                total,
+                entry.destination
+            )
             await Task.yield()
         }
 
         activeRecords.removeValue(forKey: projectKey)
         save()
 
-        return "Unpatched \(restored) files."
+        return "Unpatched (restored) files."
     }
 
     private func replacementData(
