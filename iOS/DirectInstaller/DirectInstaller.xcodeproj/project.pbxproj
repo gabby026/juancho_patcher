@@ -27,6 +27,7 @@
 
 /* Begin PBXBuildFile section */
 		A10100000000000000000010 = {isa = PBXBuildFile; fileRef = A20100000000000000000011; };
+		A10100000000000000000012 = {isa = PBXBuildFile; fileRef = A20100000000000000000012; };
 		A10100000000000000000001 = {isa = PBXBuildFile; fileRef = A20100000000000000000001; };
 		A10100000000000000000002 = {isa = PBXBuildFile; fileRef = A20100000000000000000002; };
 		A10100000000000000000003 = {isa = PBXBuildFile; fileRef = A20100000000000000000003; };
@@ -50,6 +51,7 @@
 		A20100000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesystemTarget.swift; sourceTree = "<group>"; };
 		A20100000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchStore.swift; sourceTree = "<group>"; };
 		A20100000000000000000010 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20100000000000000000012 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20200000000000000000001 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DirectInstaller.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -85,6 +87,7 @@
 				A20100000000000000000009,
 				A20100000000000000000010,
 				A20100000000000000000011,
+				A20100000000000000000012,
 			);
 			sourceTree = "<group>";
 		};
@@ -222,6 +225,7 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.7;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 			};
 			name = Debug;
 		};
