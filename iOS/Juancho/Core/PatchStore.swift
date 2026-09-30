@@ -155,16 +155,16 @@ final class PatchStore: ObservableObject {
                 var backupStorageKey: String?
 
                 if let backupData {
-                    let local = try saveBackup(projectKey: projectKey, destination: dest, data: backupData)
-                    backupPath = local.path
-
                     if !cloudToken.isEmpty {
+                        // Upload directly from the in-memory backup. Avoid writing the
+                        // same large file to local storage only to upload and delete it.
                         let safeProject = sha256(Data(projectKey.utf8)).prefix(24)
                         backupStorageKey = "backups/\(safeProject)/\(sha256(Data(dest.path.utf8))).bak"
                         try await cloud.upload(data: backupData, key: backupStorageKey!, token: cloudToken)
                         remoteBackups.append(backupStorageKey!)
-                        try? fm.removeItem(at: local)
-                        backupPath = nil
+                    } else {
+                        let local = try saveBackup(projectKey: projectKey, destination: dest, data: backupData)
+                        backupPath = local.path
                     }
                 }
 
@@ -172,8 +172,9 @@ final class PatchStore: ObservableObject {
                 completed.append((dest, backupData, !existed))
                 try replacement.write(to: dest, options: .atomic)
 
-                let written = try Data(contentsOf: dest)
-                guard sha256(written) == rule.sha256 else {
+                // We already have the exact bytes written; don't read the entire
+                // replacement file from disk a second time just to hash it.
+                guard sha256(replacement) == rule.sha256 else {
                     throw patchError(102, "Hash verification failed after writing \(rule.relativePath).")
                 }
 
@@ -237,7 +238,9 @@ final class PatchStore: ObservableObject {
         let fm = FileManager.default
         let cloud = PatchBackupCloud()
 
-        // Preflight before changing anything.
+        // Preflight before changing anything. Cloud backups are validated by
+        // downloading each backup once and retaining the bytes for the restore pass.
+        var downloadedBackups: [String: Data] = [:]
         for entry in record.entries {
             let dest = try FilesystemTarget.destinationURL(
                 container: container,
@@ -269,7 +272,7 @@ final class PatchStore: ObservableObject {
                     guard !cloudToken.isEmpty else {
                         throw patchError(107, "Cloud backup access token is missing for \(entry.destination)")
                     }
-                    _ = try await cloud.download(key: key, token: cloudToken)
+                    downloadedBackups[key] = try await cloud.download(key: key, token: cloudToken)
                 } else if let path = entry.backupPath, !fm.fileExists(atPath: path) {
                     throw patchError(107, "Backup is missing for \(entry.destination)")
                 }
@@ -287,7 +290,9 @@ final class PatchStore: ObservableObject {
                 )
 
                 if let key = entry.backupStorageKey {
-                    let data = try await cloud.download(key: key, token: cloudToken)
+                    guard let data = downloadedBackups[key] else {
+                        throw patchError(107, "Cloud backup was not loaded for \(entry.destination)")
+                    }
                     try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try data.write(to: dest, options: .atomic)
                     restored += 1
