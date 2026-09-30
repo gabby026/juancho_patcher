@@ -123,8 +123,10 @@ final class PatchStore: ObservableObject {
         document: JuanchoDocument,
         sourceFileName: String?,
         destinationOverride: String?,
-        cloudToken: String
+        cloudToken: String,
+        onProgress: ((Double, String) -> Void)? = nil
     ) async throws -> String {
+        onProgress?(0.02, "Patch in process: locating target application.")
         let container = try FilesystemTarget.locateApplication(bundleID: document.header.targetBundleID)
         let projectKey = "\(document.header.projectName)|\(document.header.targetBundleID)"
         if activeRecords[projectKey] != nil {
@@ -138,8 +140,12 @@ final class PatchStore: ObservableObject {
 
         do {
             var usedPayloads = Set<String>()
+            let totalRules = max(document.manifest.rules.count, 1)
 
-            for rule in document.manifest.rules {
+            for (index, rule) in document.manifest.rules.enumerated() {
+                let ruleStart = Double(index) / Double(totalRules)
+                let ruleEnd = Double(index + 1) / Double(totalRules)
+                onProgress?(0.05 + (ruleStart * 0.85), "Backing up default file: \(rule.relativePath)")
                 let replacement = try replacementData(for: rule, document: document, usedPayloads: &usedPayloads)
                 let dest = try FilesystemTarget.destinationURL(
                     container: container,
@@ -155,6 +161,7 @@ final class PatchStore: ObservableObject {
                 var backupStorageKey: String?
 
                 if let backupData {
+                    onProgress?(0.05 + (ruleStart * 0.85) + ((ruleEnd - ruleStart) * 0.25), "Backup process in progress: \(rule.relativePath)")
                     if !cloudToken.isEmpty {
                         // Upload directly from the in-memory backup. Avoid writing the
                         // same large file to local storage only to upload and delete it.
@@ -178,6 +185,7 @@ final class PatchStore: ObservableObject {
                     throw patchError(102, "Hash verification failed after writing \(rule.relativePath).")
                 }
 
+                onProgress?(0.05 + (ruleStart * 0.85) + ((ruleEnd - ruleStart) * 0.85), "Patch succeeded: \(rule.relativePath)")
                 recordEntries.append(.init(
                     destination: rule.relativePath,
                     backupPath: backupPath,
@@ -213,35 +221,45 @@ final class PatchStore: ObservableObject {
 
         activeRecords[projectKey] = record
         save()
+        onProgress?(1.0, "Patch process succeeded: \(recordEntries.count) file(s).")
         return "Patched \(recordEntries.count) files."
     }
 
-    func unpatch(projectName: String, bundleID: String, cloudToken: String) async throws -> String {
+    func unpatch(projectName: String, bundleID: String, cloudToken: String, onProgress: ((Double, String) -> Void)? = nil) async throws -> String {
+        onProgress?(0.02, "Restore in process: validating the patched files.")
         let projectKey = "\(projectName)|\(bundleID)"
         guard let record = activeRecords[projectKey] else {
             throw patchError(103, "No patch record exists for this project.")
         }
-        return try await unpatchRecord(projectKey: projectKey, record: record, cloudToken: cloudToken)
+        return try await unpatchRecord(projectKey: projectKey, record: record, cloudToken: cloudToken, onProgress: onProgress)
     }
 
-    func unpatch(sourceFileName: String, cloudToken: String) async throws -> String {
+    func unpatch(sourceFileName: String, cloudToken: String, onProgress: ((Double, String) -> Void)? = nil) async throws -> String {
         guard let match = activeRecords.first(where: {
             $0.value.sourceFileName?.caseInsensitiveCompare(sourceFileName) == .orderedSame
         }) else {
             throw patchError(103, "No active patch record exists for \(sourceFileName).")
         }
-        return try await unpatchRecord(projectKey: match.key, record: match.value, cloudToken: cloudToken)
+        return try await unpatchRecord(projectKey: match.key, record: match.value, cloudToken: cloudToken, onProgress: onProgress)
     }
 
-    private func unpatchRecord(projectKey: String, record: PatchRecord, cloudToken: String) async throws -> String {
+    private func unpatchRecord(
+        projectKey: String,
+        record: PatchRecord,
+        cloudToken: String,
+        onProgress: ((Double, String) -> Void)? = nil
+    ) async throws -> String {
         let container = try FilesystemTarget.locateApplication(bundleID: record.bundleID)
         let fm = FileManager.default
         let cloud = PatchBackupCloud()
+        let totalEntries = max(record.entries.count, 1)
 
         // Preflight before changing anything. Cloud backups are validated by
         // downloading each backup once and retaining the bytes for the restore pass.
         var downloadedBackups: [String: Data] = [:]
-        for entry in record.entries {
+        for (index, entry) in record.entries.enumerated() {
+            let preflightProgress = 0.05 + (Double(index) / Double(totalEntries)) * 0.35
+            onProgress?(preflightProgress, "Checking backup: \(entry.destination)")
             let dest = try FilesystemTarget.destinationURL(
                 container: container,
                 relativePath: entry.destination,
@@ -279,9 +297,12 @@ final class PatchStore: ObservableObject {
             }
         }
 
+        onProgress?(0.45, "Backup restore preflight succeeded.")
         var restored = 0
         do {
-            for entry in record.entries.reversed() {
+            for (index, entry) in record.entries.reversed().enumerated() {
+                let restoreProgress = 0.50 + (Double(index) / Double(totalEntries)) * 0.38
+                onProgress?(restoreProgress, "Restoring default file: \(entry.destination)")
                 let dest = try FilesystemTarget.destinationURL(
                     container: container,
                     relativePath: entry.destination,
@@ -296,17 +317,21 @@ final class PatchStore: ObservableObject {
                     try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try data.write(to: dest, options: .atomic)
                     restored += 1
+                    onProgress?(min(0.88, restoreProgress + 0.07), "Restore succeeded: \(entry.destination)")
                 } else if let path = entry.backupPath {
                     let backup = try Data(contentsOf: URL(fileURLWithPath: path))
                     try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
                     try backup.write(to: dest, options: .atomic)
                     restored += 1
+                    onProgress?(min(0.88, restoreProgress + 0.07), "Restore succeeded: \(entry.destination)")
                 } else if entry.addedByPatch, fm.fileExists(atPath: dest.path) {
                     try fm.removeItem(at: dest)
                     restored += 1
+                    onProgress?(min(0.88, restoreProgress + 0.07), "Restore succeeded: removed added file \(entry.destination)")
                 }
             }
 
+            onProgress?(0.90, "Removing temporary cloud backups.") 
             for entry in record.entries {
                 if let key = entry.backupStorageKey {
                     try await cloud.delete(key: key, token: cloudToken)
@@ -321,6 +346,7 @@ final class PatchStore: ObservableObject {
 
         activeRecords.removeValue(forKey: projectKey)
         save()
+        onProgress?(1.0, "Restore process succeeded: \(restored) file(s) restored.")
         return "Unpatched \(restored) files and removed their backups."
     }
 
