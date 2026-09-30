@@ -17,6 +17,9 @@ final class JuanchoModel: ObservableObject {
     @Published var status = "Ready"
     @Published var accessStatus = "Not checked"
     @Published var isBusy = false
+    @Published var destinationOverride = UserDefaults.standard.string(forKey: "juanchoDestinationOverride") ?? ""
+    @Published var privateStorageToken = PatchBackupTokenStore.load()
+    @Published var transientImportedPackage = false
 
     private var patchRequestedWhileLocked = false
 
@@ -29,35 +32,104 @@ final class JuanchoModel: ObservableObject {
     }
 
     func handleOpenURL(_ url: URL) {
-        guard url.scheme == "juancho", url.host == "import" else { return }
+        guard url.scheme == "juancho" else { return }
+
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+
+        if url.host == "unpatch" {
+            if let filename = items.first(where: { $0.name == "filename" })?.value,
+               !filename.isEmpty {
+                unpatch(sourceFileName: filename)
+            } else if let project = items.first(where: { $0.name == "project" })?.value,
+                      let bundle = items.first(where: { $0.name == "bundle" })?.value {
+                unpatch(projectName: project, bundleID: bundle)
+            } else {
+                errorMessage = "No patch identifier was supplied."
+            }
+            return
+        }
+
+        guard url.host == "import" else { return }
+
+        let ticket = items.first(where: { $0.name == "ticket" })?.value
+        let destination = items.first(where: { $0.name == "destination" })?.value ?? ""
+        let filename = items.first(where: { $0.name == "filename" })?.value ?? "skin-file.juancho"
+
+        if let ticket, !ticket.isEmpty {
+            destinationOverride = destination
+            if !destination.isEmpty {
+                UserDefaults.standard.set(destination, forKey: "juanchoDestinationOverride")
+            }
+            Task { [weak self] in
+                await self?.receivePrivateHandoff(ticket: ticket, fileName: filename)
+            }
+            return
+        }
 
         guard let data = UIPasteboard.general.data(forPasteboardType: shareHandoffType) else {
             errorMessage = "No package was received from the Share Sheet."
             return
         }
+        receiveLegacyPasteboard(data)
+    }
 
+    private func receiveLegacyPasteboard(_ data: Data) {
         do {
             let header = try JuanchoPackageCodec.readHeader(data)
-            try FileManager.default.createDirectory(
-                at: packagesDirectory,
-                withIntermediateDirectories: true
-            )
+            try FileManager.default.createDirectory(at: packagesDirectory, withIntermediateDirectories: true)
 
             let safeName = header.projectName
                 .replacingOccurrences(of: "/", with: "_")
                 .replacingOccurrences(of: "\\", with: "_")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-
             let filename = (safeName.isEmpty ? "JuanchoPackage" : safeName) + ".juancho"
             let destination = packagesDirectory.appendingPathComponent(filename, isDirectory: false)
 
             try data.write(to: destination, options: .atomic)
             loadPackages()
             packagePath = destination.path
-            importURL(destination)
+            importURL(destination, transient: false)
             status = "Saved to Juancho — \(filename)"
         } catch {
             errorMessage = "Could not save the shared package: \(error.localizedDescription)"
+        }
+    }
+
+    private func receivePrivateHandoff(ticket: String, fileName: String) async {
+        do {
+            var components = URLComponents(string: "https://juancho-toolkit-fresh.casipitgab69.workers.dev/api/storage/handoff-download")!
+            components.queryItems = [URLQueryItem(name: "ticket", value: ticket)]
+            var request = URLRequest(url: components.url!)
+            request.httpMethod = "GET"
+            request.setValue("Juancho Patcher iOS", forHTTPHeaderField: "User-Agent")
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+
+            let (downloaded, response) = try await URLSession.shared.download(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(code) else {
+                throw NSError(domain: "Juancho", code: code, userInfo: [
+                    NSLocalizedDescriptionKey: "Private skin download failed (HTTP \(code))."
+                ])
+            }
+
+            try FileManager.default.createDirectory(at: packagesDirectory, withIntermediateDirectories: true)
+            let safe = fileName
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "\\", with: "_")
+            let finalName = safe.lowercased().hasSuffix(".juancho") ? safe : safe + ".juancho"
+            let destination = packagesDirectory.appendingPathComponent(finalName, isDirectory: false)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: downloaded, to: destination)
+
+            packagePath = destination.path
+            importURL(destination, transient: true)
+            status = "Private package downloaded — patching automatically…"
+            apply()
+        } catch {
+            errorMessage = "Private skin download failed: \(error.localizedDescription)"
+            status = "Private download failed"
         }
     }
 
@@ -133,12 +205,13 @@ final class JuanchoModel: ObservableObject {
         }
     }
 
-    func importURL(_ url: URL) {
+    func importURL(_ url: URL, transient: Bool = false) {
         do {
             let data = try Data(contentsOf: url)
             let header = try JuanchoPackageCodec.readHeader(data)
 
             importedURL = url.standardizedFileURL
+            transientImportedPackage = transient
             importedData = data
             packageHeader = header
             password = ""
@@ -175,7 +248,6 @@ final class JuanchoModel: ObservableObject {
 
             do {
                 let header = try JuanchoPackageCodec.readHeader(data)
-
                 if header.passwordProtected {
                     patchRequestedWhileLocked = true
                     password = ""
@@ -183,7 +255,6 @@ final class JuanchoModel: ObservableObject {
                     status = "Enter package password to patch"
                     return
                 }
-
                 document = try JuanchoPackageCodec.decode(data)
             } catch {
                 errorMessage = error.localizedDescription
@@ -197,12 +268,26 @@ final class JuanchoModel: ObservableObject {
         }
 
         isBusy = true
-        defer { isBusy = false }
+        let token = privateStorageToken
+        let override = destinationOverride.trimmingCharacters(in: .whitespacesAndNewlines)
+        let source = importedURL?.lastPathComponent
 
-        do {
-            status = try patchStore.apply(document: doc)
-        } catch {
-            errorMessage = error.localizedDescription
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let message = try await self.patchStore.apply(
+                    document: doc,
+                    sourceFileName: source,
+                    destinationOverride: override.isEmpty ? nil : override,
+                    cloudToken: token
+                )
+                self.status = message
+                self.isBusy = false
+                self.cleanupTransientPackage()
+            } catch {
+                self.errorMessage = error.localizedDescription
+                self.isBusy = false
+            }
         }
     }
 
@@ -219,22 +304,13 @@ final class JuanchoModel: ObservableObject {
         }
 
         do {
-            document = try JuanchoPackageCodec.decode(
-                data,
-                password: password
-            )
-
+            document = try JuanchoPackageCodec.decode(data, password: password)
             password = ""
             passwordPrompt = false
             patchRequestedWhileLocked = false
-
-            status = "Password accepted — patching..."
-            isBusy = true
-            defer { isBusy = false }
-
-            status = try patchStore.apply(document: document!)
+            status = "Password accepted — patching…"
+            apply()
         } catch {
-            // Keep the password dialog open for a wrong password.
             errorMessage = error.localizedDescription
             if importedData != nil, packageHeader?.passwordProtected == true {
                 passwordPrompt = true
@@ -250,24 +326,61 @@ final class JuanchoModel: ObservableObject {
     }
 
     func unpatch() {
-        guard let doc = document, !isBusy else {
-            if document == nil {
-                errorMessage = "Load and unlock the package before unpatching."
-            }
-            return
+        guard !isBusy else { return }
+        if let doc = document {
+            unpatch(projectName: doc.header.projectName, bundleID: doc.header.targetBundleID)
+        } else if let filename = importedURL?.lastPathComponent {
+            unpatch(sourceFileName: filename)
+        } else {
+            errorMessage = "Load a .juancho package or use Injects."
         }
+    }
 
+    func unpatch(sourceFileName: String) {
         isBusy = true
-        defer { isBusy = false }
-
-        do {
-            status = try patchStore.unpatch(
-                projectName: doc.header.projectName,
-                bundleID: doc.header.targetBundleID
-            )
-        } catch {
-            errorMessage = error.localizedDescription
+        let token = privateStorageToken
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                self.status = try await self.patchStore.unpatch(sourceFileName: sourceFileName, cloudToken: token)
+            } catch {
+                self.errorMessage = error.localizedDescription
+            }
+            self.isBusy = false
         }
+    }
+
+    func unpatch(projectName: String, bundleID: String) {
+        isBusy = true
+        let token = privateStorageToken
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                self.status = try await self.patchStore.unpatch(projectName: projectName, bundleID: bundleID, cloudToken: token)
+            } catch {
+                self.errorMessage = error.localizedDescription
+            }
+            self.isBusy = false
+        }
+    }
+
+    func setDestinationOverride(_ value: String) {
+        destinationOverride = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(destinationOverride, forKey: "juanchoDestinationOverride")
+    }
+
+    func setPrivateStorageToken(_ value: String) {
+        privateStorageToken = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        try? PatchBackupTokenStore.save(privateStorageToken)
+    }
+
+    private func cleanupTransientPackage() {
+        guard transientImportedPackage, let url = importedURL else { return }
+        try? FileManager.default.removeItem(at: url)
+        transientImportedPackage = false
+        importedURL = nil
+        importedData = nil
+        document = nil
     }
 
     func verifyInstalled() {
@@ -287,7 +400,9 @@ final class JuanchoModel: ObservableObject {
             for rule in doc.manifest.rules {
                 let url = try FilesystemTarget.destinationURL(
                     container: container,
-                    relativePath: rule.relativePath
+                    relativePath: rule.relativePath,
+                    packageBasePath: doc.header.basePath,
+                    destinationOverride: destinationOverride.isEmpty ? nil : destinationOverride
                 )
 
                 guard FileManager.default.fileExists(atPath: url.path) else {
@@ -327,7 +442,9 @@ final class JuanchoModel: ObservableObject {
             )
             let base = try FilesystemTarget.destinationURL(
                 container: c,
-                relativePath: doc.header.basePath
+                relativePath: doc.header.basePath,
+                packageBasePath: "",
+                destinationOverride: destinationOverride.isEmpty ? nil : destinationOverride
             )
             accessStatus = "Container accessible\n\(c.url.path)\nBase path: \(base.path)"
         } catch {

@@ -11,6 +11,7 @@ extension UTType {
 struct ContentView: View {
     @EnvironmentObject private var model: JuanchoModel
     @State private var importer = false
+    @State private var showingSettings = false
 
     private var patchIsKnown: Bool {
         guard let header = model.packageHeader else { return false }
@@ -39,6 +40,17 @@ struct ContentView: View {
                 patchSection
             }
             .navigationTitle("Juancho")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showingSettings = true } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("Patch settings")
+                }
+            }
+            .sheet(isPresented: $showingSettings) {
+                PatchSettingsView().environmentObject(model)
+            }
             .fileImporter(
                 isPresented: $importer,
                 allowedContentTypes: [.data],
@@ -299,6 +311,52 @@ struct ContentView: View {
                 || !patchIsKnown
                 || model.document == nil
             )
+        }
+    }
+}
+
+
+struct PatchSettingsView: View {
+    @EnvironmentObject private var model: JuanchoModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var destination = ""
+    @State private var token = ""
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Patch destination") {
+                    TextField("/var/mobile/.../Documents/TargetFolder", text: $destination, axis: .vertical)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .lineLimit(2...5)
+                    Text("This overrides the package base path. Leave it blank to use the package's normal destination.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Section("Cloud backup") {
+                    SecureField("Cloudflare Private App token", text: $token)
+                    Text("Use the token generated in Juancho Cloudflare Admin → Private App. Backups are removed after a successful Unpatch / Restore.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .navigationTitle("Patch Settings")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        model.setDestinationOverride(destination)
+                        model.setPrivateStorageToken(token)
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                destination = model.destinationOverride
+                token = model.privateStorageToken
+            }
         }
     }
 }

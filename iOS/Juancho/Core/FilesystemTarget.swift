@@ -76,7 +76,9 @@ final class FilesystemTarget {
 
     static func destinationURL(
         container: ApplicationContainer,
-        relativePath: String
+        relativePath: String,
+        packageBasePath: String? = nil,
+        destinationOverride: String? = nil
     ) throws -> URL {
         let normalized = relativePath
             .replacingOccurrences(of: "\\", with: "/")
@@ -90,6 +92,40 @@ final class FilesystemTarget {
             throw TargetAccessError.unsafePath
         }
 
-        return container.url.appendingPathComponent(normalized, isDirectory: false)
+        if let override = destinationOverride?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !override.isEmpty {
+            guard !override.split(separator: "/").contains("..") else {
+                throw TargetAccessError.unsafePath
+            }
+
+            let base = (packageBasePath ?? "")
+                .replacingOccurrences(of: "\\", with: "/")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+            let child: String
+            if !base.isEmpty, normalized == base {
+                child = ""
+            } else if !base.isEmpty, normalized.hasPrefix(base + "/") {
+                child = String(normalized.dropFirst(base.count + 1))
+            } else {
+                child = normalized
+            }
+
+            let root: URL
+            if override.hasPrefix("/") {
+                root = URL(fileURLWithPath: override).standardizedFileURL
+            } else {
+                root = container.url
+                    .appendingPathComponent(override, isDirectory: true)
+                    .standardizedFileURL
+            }
+
+            return root.appendingPathComponent(child, isDirectory: false).standardizedFileURL
+        }
+
+        return container.url
+            .appendingPathComponent(normalized, isDirectory: false)
+            .standardizedFileURL
     }
 }

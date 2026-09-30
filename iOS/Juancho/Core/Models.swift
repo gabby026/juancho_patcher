@@ -54,11 +54,15 @@ struct PatchRecord: Codable {
     var packageName: String
     var bundleID: String
     var appliedAt: Date
+    var sourceFileName: String?
+    var packageBasePath: String?
+    var destinationRoot: String?
     var entries: [Entry]
 
     struct Entry: Codable {
         var destination: String
         var backupPath: String?
+        var backupStorageKey: String?
         var addedByPatch: Bool
         var expectedSHA256: String
     }
