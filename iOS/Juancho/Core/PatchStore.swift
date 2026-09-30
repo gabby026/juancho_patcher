@@ -178,6 +178,7 @@ final class PatchStore: ObservableObject {
                 try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
                 completed.append((dest, backupData, !existed))
                 try replacement.write(to: dest, options: .atomic)
+                onProgress?(0.05 + (ruleStart * 0.85) + ((ruleEnd - ruleStart) * 0.55), "Backup process succeeded: (rule.relativePath)")
 
                 // We already have the exact bytes written; don't read the entire
                 // replacement file from disk a second time just to hash it.
