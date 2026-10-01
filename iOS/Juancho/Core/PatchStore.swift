@@ -508,7 +508,7 @@ final class PatchStore: ObservableObject {
             withIntermediateDirectories: true
         )
 
-        let url = dir.appendingPathComponent(
+        var url = dir.appendingPathComponent(
             sha256(Data(destination.path.utf8)) + ".bak"
         )
 
