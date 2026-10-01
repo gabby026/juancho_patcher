@@ -310,7 +310,6 @@ final class PatchStore: ObservableObject {
     ) async throws -> String {
         let container = try FilesystemTarget.locateApplication(bundleID: record.bundleID)
         let fm = FileManager.default
-        let cloud = PatchBackupCloud()
         let totalEntries = max(record.entries.count, 1)
 
         // Preflight before changing anything. Cloud backups are downloaded once and
@@ -402,7 +401,7 @@ final class PatchStore: ObservableObject {
                     try fm.copyItem(at: URL(fileURLWithPath: path), to: dest)
                     restored += 1
                     onProgress?(min(0.88, restoreProgress + 0.07), "Restore succeeded from local backup: \(entry.destination)")
-                }                } else if entry.addedByPatch, fm.fileExists(atPath: dest.path) {
+                } else if entry.addedByPatch, fm.fileExists(atPath: dest.path) {
                     try fm.removeItem(at: dest)
                     restored += 1
                     if modifiedDestinations.contains(entry.destination) {
