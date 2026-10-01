@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import Security
+import Darwin
 
 enum PatchBackupTokenStore {
     private static let service = "com.juancho.patchmanager.private"
@@ -205,10 +206,13 @@ final class PatchStore: ObservableObject {
                     withIntermediateDirectories: true
                 )
                 completed.append((dest, backupPath, !existed))
-                try replacement.write(to: dest, options: .atomic)
+
+                // Avoid an extra temporary copy of a large replacement file. The
+                // local backup is already secured before this direct write begins.
+                try replacement.write(to: dest, options: [])
                 onProgress?(
                     0.05 + (ruleStart * 0.85) + ((ruleEnd - ruleStart) * 0.65),
-                    "Replacement written: \(rule.relativePath)"
+                    "Replacement written directly: \(rule.relativePath)"
                 )
 
                 // Hash the already-loaded replacement bytes rather than reading the
@@ -238,6 +242,14 @@ final class PatchStore: ObservableObject {
                 } else if item.added {
                     try? fm.removeItem(at: item.dest)
                 }
+            }
+            if let nsError = error as NSError?,
+               nsError.domain == NSCocoaErrorDomain,
+               nsError.code == NSFileWriteOutOfSpaceError {
+                throw patchError(
+                    109,
+                    "Not enough free storage to write the replacement. The original backup is safe; free some Data volume space and retry."
+                )
             }
             throw error
         }
@@ -397,8 +409,19 @@ final class PatchStore: ObservableObject {
                 if let path = entry.backupPath,
                    fm.fileExists(atPath: path) {
                     try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    let backupURL = URL(fileURLWithPath: path)
                     try fm.removeItemIfExists(at: dest)
-                    try fm.copyItem(at: URL(fileURLWithPath: path), to: dest)
+
+                    // Same-volume restore is normally just a metadata move, so it
+                    // does not require another full-size temporary copy.
+                    do {
+                        try fm.moveItem(at: backupURL, to: dest)
+                    } catch {
+                        // Cross-volume/filesystem fallback.
+                        try fm.copyItem(at: backupURL, to: dest)
+                        try? fm.removeItem(at: backupURL)
+                    }
+
                     restored += 1
                     onProgress?(min(0.88, restoreProgress + 0.07), "Restore succeeded from local backup: \(entry.destination)")
                 } else if entry.addedByPatch, fm.fileExists(atPath: dest.path) {
@@ -508,7 +531,7 @@ final class PatchStore: ObservableObject {
             withIntermediateDirectories: true
         )
 
-        var url = dir.appendingPathComponent(
+        let url = dir.appendingPathComponent(
             sha256(Data(destination.path.utf8)) + ".bak"
         )
 
@@ -516,9 +539,24 @@ final class PatchStore: ObservableObject {
             try? FileManager.default.removeItem(at: url)
         }
 
-        // Keep only the original file in the app's local Application Support.
-        // It is never uploaded or sent to the patch-download service.
-        try FileManager.default.copyItem(at: destination, to: url)
+        // Prefer APFS copy-on-write cloning. It creates a separate persistent
+        // backup without immediately duplicating the entire file's data blocks.
+        let result: Int32 = destination.path.withCString { src in
+            url.path.withCString { dst in
+                copyfile(
+                    src,
+                    dst,
+                    nil,
+                    copyfile_flags_t(COPYFILE_ALL | COPYFILE_CLONE)
+                )
+            }
+        }
+
+        if result != 0 {
+            // Fallback for filesystems that do not support cloning.
+            try FileManager.default.copyItem(at: destination, to: url)
+        }
+
         try FileManager.default.setAttributes(
             [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
             ofItemAtPath: url.path
