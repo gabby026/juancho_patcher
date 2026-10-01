@@ -178,7 +178,7 @@ final class PatchStore: ObservableObject {
                 try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
                 completed.append((dest, backupData, !existed))
                 try replacement.write(to: dest, options: .atomic)
-                onProgress?(0.05 + (ruleStart * 0.85) + ((ruleEnd - ruleStart) * 0.55), "Backup process succeeded: (rule.relativePath)")
+                onProgress?(0.05 + (ruleStart * 0.85) + ((ruleEnd - ruleStart) * 0.55), "Replacement written successfully: \(rule.relativePath)")
 
                 // We already have the exact bytes written; don't read the entire
                 // replacement file from disk a second time just to hash it.
@@ -230,7 +230,7 @@ final class PatchStore: ObservableObject {
         projectName: String,
         bundleID: String,
         cloudToken: String,
-        forceRestoreModifiedFiles: Bool = false,
+        forceRestoreModifiedFiles: Bool = true,
         onProgress: ((Double, String) -> Void)? = nil
     ) async throws -> String {
         onProgress?(0.02, "Restore in process: validating the patched files.")
@@ -250,7 +250,7 @@ final class PatchStore: ObservableObject {
     func unpatch(
         sourceFileName: String,
         cloudToken: String,
-        forceRestoreModifiedFiles: Bool = false,
+        forceRestoreModifiedFiles: Bool = true,
         onProgress: ((Double, String) -> Void)? = nil
     ) async throws -> String {
         guard let match = activeRecords.first(where: {
@@ -288,8 +288,9 @@ final class PatchStore: ObservableObject {
         var missingDestinations: [String] = []
 
         for (index, entry) in record.entries.enumerated() {
-            let preflightProgress = 0.05 + (Double(index) / Double(totalEntries)) * 0.35
-            onProgress?(preflightProgress, "Checking backup: \(entry.destination)")
+            let scanProgress = 0.05 + (Double(index) / Double(totalEntries)) * 0.15
+            let preflightProgress = 0.20 + (Double(index) / Double(totalEntries)) * 0.25
+            onProgress?(scanProgress, "Checking current target: \(entry.destination)")
             let dest = try FilesystemTarget.destinationURL(
                 container: container,
                 relativePath: entry.destination,
@@ -339,7 +340,9 @@ final class PatchStore: ObservableObject {
                 guard !cloudToken.isEmpty else {
                     throw patchError(107, "Cloud backup access token is missing for \(entry.destination)")
                 }
+                onProgress?(preflightProgress, "Downloading saved backup: \(entry.destination)")
                 downloadedBackups[key] = try await cloud.download(key: key, token: cloudToken)
+                onProgress?(preflightProgress, "Saved backup ready: \(entry.destination)")
             } else if let path = entry.backupPath, !fm.fileExists(atPath: path) {
                 throw patchError(107, "Backup is missing for \(entry.destination)")
             }
