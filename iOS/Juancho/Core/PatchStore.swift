@@ -133,7 +133,6 @@ actor PatchBackupCloud {
 final class PatchStore: ObservableObject {
     @Published private(set) var activeRecords: [String: PatchRecord] = [:]
     private let root: URL
-    private var cloudUploadTasks: [String: Task<Void, Never>] = [:]
 
     init() {
         let fm = FileManager.default
@@ -181,7 +180,6 @@ final class PatchStore: ObservableObject {
                 let fm = FileManager.default
                 let existed = fm.fileExists(atPath: dest.path)
                 var backupPath: URL?
-                var backupStorageKey: String?
 
                 if existed {
                     onProgress?(
@@ -195,11 +193,6 @@ final class PatchStore: ObservableObject {
                         projectKey: projectKey,
                         destination: dest
                     )
-
-                    if !cloudToken.isEmpty {
-                        let safeProject = sha256(Data(projectKey.utf8)).prefix(24)
-                        backupStorageKey = "backups/\(safeProject)/\(sha256(Data(dest.path.utf8))).bak"
-                    }
 
                     onProgress?(
                         0.05 + (ruleStart * 0.85) + ((ruleEnd - ruleStart) * 0.35),
@@ -231,7 +224,7 @@ final class PatchStore: ObservableObject {
                 recordEntries.append(.init(
                     destination: rule.relativePath,
                     backupPath: backupPath?.path,
-                    backupStorageKey: backupStorageKey,
+                    backupStorageKey: nil,
                     addedByPatch: !existed,
                     expectedSHA256: rule.sha256
                 ))
@@ -262,17 +255,7 @@ final class PatchStore: ObservableObject {
         activeRecords[projectKey] = record
         save()
 
-        if !cloudToken.isEmpty {
-            queueCloudBackupUploads(
-                projectKey: projectKey,
-                record: record,
-                token: cloudToken,
-                onProgress: onProgress
-            )
-            onProgress?(1.0, "Patch completed locally; cloud backup syncing in background.")
-        } else {
-            onProgress?(1.0, "Patch process succeeded: \(recordEntries.count) file(s).")
-        }
+        onProgress?(1.0, "Patch process succeeded locally: \(recordEntries.count) file(s). Original files are stored only in the local restore backup.")
 
         return "Patched \(recordEntries.count) files."
     }
@@ -334,7 +317,6 @@ final class PatchStore: ObservableObject {
         // retained for the restore pass. A normal unpatch stays conservative, while
         // the toolkit can explicitly request a full restore when the target changed
         // after patching.
-        var downloadedBackups: [String: Data] = [:]
         var modifiedDestinations: [String] = []
         var missingDestinations: [String] = []
 
@@ -387,16 +369,11 @@ final class PatchStore: ObservableObject {
             }
 
             if localBackupExists {
-                onProgress?(preflightProgress, "Local backup ready: \(entry.destination)")
-            } else if let key = entry.backupStorageKey {
-                guard !cloudToken.isEmpty else {
-                    throw patchError(107, "Cloud backup access token is missing for \(entry.destination)")
-                }
-                onProgress?(preflightProgress, "Local backup missing; downloading saved backup: \(entry.destination)")
-                downloadedBackups[key] = try await cloud.download(key: key, token: cloudToken)
-                onProgress?(preflightProgress, "Cloud backup ready: \(entry.destination)")
+                onProgress?(preflightProgress, "Local restore backup ready: \(entry.destination)")
+            } else if entry.backupStorageKey != nil {
+                throw patchError(107, "Legacy cloud-only backup found for \(entry.destination). This build no longer creates cloud backups; reapply the patch once to create a local restore backup.")
             } else {
-                throw patchError(107, "Backup is missing for \(entry.destination)")
+                throw patchError(107, "Local restore backup is missing for \(entry.destination)")
             }
         }
 
@@ -425,15 +402,7 @@ final class PatchStore: ObservableObject {
                     try fm.copyItem(at: URL(fileURLWithPath: path), to: dest)
                     restored += 1
                     onProgress?(min(0.88, restoreProgress + 0.07), "Restore succeeded from local backup: \(entry.destination)")
-                } else if let key = entry.backupStorageKey {
-                    guard let data = downloadedBackups[key] else {
-                        throw patchError(107, "Cloud backup was not loaded for \(entry.destination)")
-                    }
-                    try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try data.write(to: dest, options: .atomic)
-                    restored += 1
-                    onProgress?(min(0.88, restoreProgress + 0.07), "Restore succeeded from cloud backup: \(entry.destination)")
-                } else if entry.addedByPatch, fm.fileExists(atPath: dest.path) {
+                }                } else if entry.addedByPatch, fm.fileExists(atPath: dest.path) {
                     try fm.removeItem(at: dest)
                     restored += 1
                     if modifiedDestinations.contains(entry.destination) {
@@ -460,18 +429,13 @@ final class PatchStore: ObservableObject {
             )
         }
 
-        let uploadTask = cloudUploadTasks.removeValue(forKey: projectKey)
-        uploadTask?.cancel()
         let cleanupEntries = record.entries
-        let cleanupToken = cloudToken
-        Task { [weak self] in
-            _ = await uploadTask?.value
-            guard let self else { return }
-            await self.cleanupBackupsAfterRestore(
-                projectKey: projectKey,
-                entries: cleanupEntries,
-                cloudToken: cleanupToken
-            )
+        Task.detached(priority: .utility) {
+            for entry in cleanupEntries {
+                if let path = entry.backupPath {
+                    try? FileManager.default.removeItem(at: URL(fileURLWithPath: path))
+                }
+            }
         }
 
         onProgress?(1.0, "Restore process succeeded: \(restored) file(s) restored.")
@@ -553,67 +517,17 @@ final class PatchStore: ObservableObject {
             try? FileManager.default.removeItem(at: url)
         }
 
+        // Keep only the original file in the app's local Application Support.
+        // It is never uploaded or sent to the patch-download service.
         try FileManager.default.copyItem(at: destination, to: url)
+        try FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+            ofItemAtPath: url.path
+        )
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
         return url
-    }
-
-    private func queueCloudBackupUploads(
-        projectKey: String,
-        record: PatchRecord,
-        token: String,
-        onProgress: ((Double, String) -> Void)?
-    ) {
-        cloudUploadTasks[projectKey]?.cancel()
-
-        let cloud = PatchBackupCloud()
-        let entries = record.entries.compactMap { entry -> (String, URL, String)? in
-            guard let path = entry.backupPath,
-                  let key = entry.backupStorageKey else { return nil }
-            return (entry.destination, URL(fileURLWithPath: path), key)
-        }
-
-        guard !entries.isEmpty else { return }
-
-        let task = Task { [weak self] in
-            do {
-                for (destination, fileURL, key) in entries {
-                    try Task.checkCancellation()
-                    try await cloud.upload(fileURL: fileURL, key: key, token: token)
-                    onProgress?(1.0, "Cloud backup synced in background: \(destination)")
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                onProgress?(1.0, "Cloud backup sync deferred: local backup remains available.")
-            }
-
-            guard let self else { return }
-            if self.cloudUploadTasks[projectKey] != nil {
-                self.cloudUploadTasks.removeValue(forKey: projectKey)
-            }
-        }
-
-        cloudUploadTasks[projectKey] = task
-    }
-
-    private func cleanupBackupsAfterRestore(
-        projectKey: String,
-        entries: [PatchRecord.Entry],
-        cloudToken: String
-    ) {
-        let cloud = PatchBackupCloud()
-        let entryCopy = entries
-
-        Task.detached(priority: .utility) {
-            for entry in entryCopy {
-                if let path = entry.backupPath {
-                    try? FileManager.default.removeItem(at: URL(fileURLWithPath: path))
-                }
-                if let key = entry.backupStorageKey, !cloudToken.isEmpty {
-                    try? await cloud.delete(key: key, token: cloudToken)
-                }
-            }
-        }
     }
 
     private func save() {
