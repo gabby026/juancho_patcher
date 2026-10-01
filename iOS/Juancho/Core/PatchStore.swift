@@ -237,8 +237,14 @@ final class PatchStore: ObservableObject {
             let fm = FileManager.default
             for item in completed.reversed() {
                 if let backupPath = item.backupPath {
-                    try? fm.removeItem(at: item.dest)
-                    try? fm.copyItem(at: backupPath, to: item.dest)
+                    let backupURL = backupPath
+                    try? fm.removeItemIfExists(at: item.dest)
+                    do {
+                        try fm.moveItem(at: backupURL, to: item.dest)
+                    } catch {
+                        try? fm.copyItem(at: backupURL, to: item.dest)
+                        try? fm.removeItemIfExists(at: backupURL)
+                    }
                 } else if item.added {
                     try? fm.removeItem(at: item.dest)
                 }
@@ -553,8 +559,15 @@ final class PatchStore: ObservableObject {
         }
 
         if result != 0 {
-            // Fallback for filesystems that do not support cloning.
-            try FileManager.default.copyItem(at: destination, to: url)
+            // Fallback for filesystems that do not support cloning. If the device
+            // cannot afford a second full copy, move the original instead; the
+            // restore path moves it back without another full-size allocation.
+            do {
+                try FileManager.default.copyItem(at: destination, to: url)
+            } catch {
+                try? FileManager.default.removeItem(at: url)
+                try FileManager.default.moveItem(at: destination, to: url)
+            }
         }
 
         try FileManager.default.setAttributes(
