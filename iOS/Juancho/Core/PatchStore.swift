@@ -226,28 +226,52 @@ final class PatchStore: ObservableObject {
         return "Patched \(recordEntries.count) files."
     }
 
-    func unpatch(projectName: String, bundleID: String, cloudToken: String, onProgress: ((Double, String) -> Void)? = nil) async throws -> String {
+    func unpatch(
+        projectName: String,
+        bundleID: String,
+        cloudToken: String,
+        forceRestoreModifiedFiles: Bool = false,
+        onProgress: ((Double, String) -> Void)? = nil
+    ) async throws -> String {
         onProgress?(0.02, "Restore in process: validating the patched files.")
         let projectKey = "\(projectName)|\(bundleID)"
         guard let record = activeRecords[projectKey] else {
             throw patchError(103, "No patch record exists for this project.")
         }
-        return try await unpatchRecord(projectKey: projectKey, record: record, cloudToken: cloudToken, onProgress: onProgress)
+        return try await unpatchRecord(
+            projectKey: projectKey,
+            record: record,
+            cloudToken: cloudToken,
+            forceRestoreModifiedFiles: forceRestoreModifiedFiles,
+            onProgress: onProgress
+        )
     }
 
-    func unpatch(sourceFileName: String, cloudToken: String, onProgress: ((Double, String) -> Void)? = nil) async throws -> String {
+    func unpatch(
+        sourceFileName: String,
+        cloudToken: String,
+        forceRestoreModifiedFiles: Bool = false,
+        onProgress: ((Double, String) -> Void)? = nil
+    ) async throws -> String {
         guard let match = activeRecords.first(where: {
             $0.value.sourceFileName?.caseInsensitiveCompare(sourceFileName) == .orderedSame
         }) else {
             throw patchError(103, "No active patch record exists for \(sourceFileName).")
         }
-        return try await unpatchRecord(projectKey: match.key, record: match.value, cloudToken: cloudToken, onProgress: onProgress)
+        return try await unpatchRecord(
+            projectKey: match.key,
+            record: match.value,
+            cloudToken: cloudToken,
+            forceRestoreModifiedFiles: forceRestoreModifiedFiles,
+            onProgress: onProgress
+        )
     }
 
     private func unpatchRecord(
         projectKey: String,
         record: PatchRecord,
         cloudToken: String,
+        forceRestoreModifiedFiles: Bool,
         onProgress: ((Double, String) -> Void)? = nil
     ) async throws -> String {
         let container = try FilesystemTarget.locateApplication(bundleID: record.bundleID)
@@ -255,9 +279,14 @@ final class PatchStore: ObservableObject {
         let cloud = PatchBackupCloud()
         let totalEntries = max(record.entries.count, 1)
 
-        // Preflight before changing anything. Cloud backups are validated by
-        // downloading each backup once and retaining the bytes for the restore pass.
+        // Preflight before changing anything. Cloud backups are downloaded once and
+        // retained for the restore pass. A normal unpatch stays conservative, while
+        // the toolkit can explicitly request a full restore when the target changed
+        // after patching.
         var downloadedBackups: [String: Data] = [:]
+        var modifiedDestinations: [String] = []
+        var missingDestinations: [String] = []
+
         for (index, entry) in record.entries.enumerated() {
             let preflightProgress = 0.05 + (Double(index) / Double(totalEntries)) * 0.35
             onProgress?(preflightProgress, "Checking backup: \(entry.destination)")
@@ -271,35 +300,58 @@ final class PatchStore: ObservableObject {
             if entry.addedByPatch {
                 if fm.fileExists(atPath: dest.path) {
                     let current = try Data(contentsOf: dest)
-                    guard sha256(current) == entry.expectedSHA256 else {
-                        throw patchError(104, "Refusing to remove modified file: \(entry.destination)")
+                    if sha256(current) != entry.expectedSHA256 {
+                        modifiedDestinations.append(entry.destination)
+                        if forceRestoreModifiedFiles {
+                            onProgress?(preflightProgress, "WARNING: modified added file \(entry.destination) will be removed during restore.")
+                        } else {
+                            throw patchError(104, "Refusing to remove modified file: \(entry.destination)")
+                        }
+                    }
+                }
+                continue
+            }
+
+            guard entry.backupStorageKey != nil || entry.backupPath != nil else {
+                throw patchError(105, "Missing backup for \(entry.destination)")
+            }
+
+            if fm.fileExists(atPath: dest.path) {
+                let current = try Data(contentsOf: dest)
+                if sha256(current) != entry.expectedSHA256 {
+                    modifiedDestinations.append(entry.destination)
+                    if forceRestoreModifiedFiles {
+                        onProgress?(preflightProgress, "WARNING: modified file \(entry.destination) will be overwritten with the saved backup.")
+                    } else {
+                        throw patchError(104, "Refusing to overwrite modified file: \(entry.destination)")
                     }
                 }
             } else {
-                guard entry.backupStorageKey != nil || entry.backupPath != nil else {
-                    throw patchError(105, "Missing backup for \(entry.destination)")
-                }
-                guard fm.fileExists(atPath: dest.path) else {
+                missingDestinations.append(entry.destination)
+                if forceRestoreModifiedFiles {
+                    onProgress?(preflightProgress, "WARNING: patched file missing: \(entry.destination). The saved backup will be restored.")
+                } else {
                     throw patchError(106, "Patched file is missing: \(entry.destination)")
                 }
-                let current = try Data(contentsOf: dest)
-                guard sha256(current) == entry.expectedSHA256 else {
-                    throw patchError(104, "Refusing to overwrite modified file: \(entry.destination)")
-                }
+            }
 
-                if let key = entry.backupStorageKey {
-                    guard !cloudToken.isEmpty else {
-                        throw patchError(107, "Cloud backup access token is missing for \(entry.destination)")
-                    }
-                    downloadedBackups[key] = try await cloud.download(key: key, token: cloudToken)
-                } else if let path = entry.backupPath, !fm.fileExists(atPath: path) {
-                    throw patchError(107, "Backup is missing for \(entry.destination)")
+            if let key = entry.backupStorageKey {
+                guard !cloudToken.isEmpty else {
+                    throw patchError(107, "Cloud backup access token is missing for \(entry.destination)")
                 }
+                downloadedBackups[key] = try await cloud.download(key: key, token: cloudToken)
+            } else if let path = entry.backupPath, !fm.fileExists(atPath: path) {
+                throw patchError(107, "Backup is missing for \(entry.destination)")
             }
         }
 
-        onProgress?(0.45, "Backup restore preflight succeeded.")
+        if forceRestoreModifiedFiles && (!modifiedDestinations.isEmpty || !missingDestinations.isEmpty) {
+            onProgress?(0.45, "Restore preflight succeeded. \(modifiedDestinations.count) modified and \(missingDestinations.count) missing file(s) will be reconciled.")
+        } else {
+            onProgress?(0.45, "Backup restore preflight succeeded.")
+        }
         var restored = 0
+        var restoreWarnings = 0
         do {
             for (index, entry) in record.entries.reversed().enumerated() {
                 let restoreProgress = 0.50 + (Double(index) / Double(totalEntries)) * 0.38
@@ -328,6 +380,9 @@ final class PatchStore: ObservableObject {
                 } else if entry.addedByPatch, fm.fileExists(atPath: dest.path) {
                     try fm.removeItem(at: dest)
                     restored += 1
+                    if modifiedDestinations.contains(entry.destination) {
+                        restoreWarnings += 1
+                    }
                     onProgress?(min(0.88, restoreProgress + 0.07), "Restore succeeded: removed added file \(entry.destination)")
                 }
             }
@@ -347,8 +402,18 @@ final class PatchStore: ObservableObject {
 
         activeRecords.removeValue(forKey: projectKey)
         save()
+
+        if forceRestoreModifiedFiles && (!modifiedDestinations.isEmpty || !missingDestinations.isEmpty) {
+            onProgress?(
+                0.96,
+                "Restore reconciliation complete: \(modifiedDestinations.count) modified, \(missingDestinations.count) missing, \(restoreWarnings) modified added file(s) removed."
+            )
+        }
+
         onProgress?(1.0, "Restore process succeeded: \(restored) file(s) restored.")
-        return "Unpatched \(restored) files and removed their backups."
+        return forceRestoreModifiedFiles && !modifiedDestinations.isEmpty
+            ? "Unpatched \(restored) files and restored saved backups (\(modifiedDestinations.count) target(s) had changed)."
+            : "Unpatched \(restored) files and removed their backups."
     }
 
     func state(projectName: String, bundleID: String) -> PatchRecord? {
