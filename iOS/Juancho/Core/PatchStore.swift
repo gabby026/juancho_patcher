@@ -161,6 +161,23 @@ final class PatchStore: ObservableObject {
         var recordEntries: [PatchRecord.Entry] = []
         var completed: [(dest: URL, backupPath: URL?, added: Bool)] = []
 
+        func persistProgressRecord() {
+            activeRecords[projectKey] = PatchRecord(
+                packageName: document.header.projectName,
+                bundleID: document.header.targetBundleID,
+                appliedAt: Date(),
+                sourceFileName: sourceFileName,
+                packageBasePath: document.header.basePath,
+                destinationRoot: destinationOverride?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? destinationOverride : nil,
+                entries: recordEntries
+            )
+            save()
+        }
+
+        // Persist before the first target mutation so an interrupted patch is
+        // still discoverable and restorable after relaunch.
+        persistProgressRecord()
+
         do {
             var usedPayloads = Set<String>()
             let totalRules = max(document.manifest.rules.count, 1)
@@ -232,6 +249,7 @@ final class PatchStore: ObservableObject {
                     addedByPatch: !existed,
                     expectedSHA256: rule.sha256
                 ))
+                persistProgressRecord()
             }
         } catch {
             let fm = FileManager.default
@@ -249,6 +267,10 @@ final class PatchStore: ObservableObject {
                     try? fm.removeItem(at: item.dest)
                 }
             }
+            // Rollback completed, so remove the provisional recovery record.
+            activeRecords.removeValue(forKey: projectKey)
+            save()
+
             if let nsError = error as NSError?,
                nsError.domain == NSCocoaErrorDomain,
                nsError.code == NSFileWriteOutOfSpaceError {
@@ -287,8 +309,11 @@ final class PatchStore: ObservableObject {
     ) async throws -> String {
         onProgress?(0.02, "Restore in process: validating the patched files.")
         let projectKey = "\(projectName)|\(bundleID)"
+        if activeRecords[projectKey] == nil {
+            reloadFromDisk()
+        }
         guard let record = activeRecords[projectKey] else {
-            throw patchError(103, "No patch record exists for this project.")
+            throw patchError(103, "No active patch record exists for \(projectName).")
         }
         return try await unpatchRecord(
             projectKey: projectKey,
@@ -305,8 +330,11 @@ final class PatchStore: ObservableObject {
         forceRestoreModifiedFiles: Bool = true,
         onProgress: ((Double, String) -> Void)? = nil
     ) async throws -> String {
+        reloadFromDiskIfNeeded()
+        let wanted = normalizedSourceFileName(sourceFileName)
         guard let match = activeRecords.first(where: {
-            $0.value.sourceFileName?.caseInsensitiveCompare(sourceFileName) == .orderedSame
+            guard let saved = $0.value.sourceFileName else { return false }
+            return normalizedSourceFileName(saved) == wanted
         }) else {
             throw patchError(103, "No active patch record exists for \(sourceFileName).")
         }
@@ -580,24 +608,54 @@ final class PatchStore: ObservableObject {
         return url
     }
 
+    private var recordsURL: URL {
+        root.appendingPathComponent("records.json")
+    }
+
+    private var recoveryRecordsURL: URL {
+        root.appendingPathComponent("records.recovery.json")
+    }
+
     private func save() {
-        let url = root.appendingPathComponent("records.json")
-        if let data = try? JSONEncoder().encode(activeRecords) {
-            try? data.write(to: url, options: .atomic)
+        guard let data = try? JSONEncoder().encode(activeRecords) else { return }
+        do {
+            try data.write(to: recordsURL, options: .atomic)
+            try? data.write(to: recoveryRecordsURL, options: .atomic)
+        } catch {
+            // Persistence failure must not interrupt a safe filesystem operation.
         }
     }
 
     private func load() {
-        let url = root.appendingPathComponent("records.json")
-        guard
-            let data = try? Data(contentsOf: url),
-            let records = try? JSONDecoder().decode(
-                [String: PatchRecord].self,
-                from: data
-            )
-        else { return }
+        reloadFromDisk()
+    }
 
-        activeRecords = records
+    private func reloadFromDisk() {
+        for url in [recordsURL, recoveryRecordsURL] {
+            guard
+                let data = try? Data(contentsOf: url),
+                let records = try? JSONDecoder().decode([String: PatchRecord].self, from: data)
+            else { continue }
+            activeRecords = records
+            if url != recordsURL {
+                try? data.write(to: recordsURL, options: .atomic)
+            }
+            return
+        }
+    }
+
+    private func reloadFromDiskIfNeeded() {
+        if activeRecords.isEmpty {
+            reloadFromDisk()
+        }
+    }
+
+    private func normalizedSourceFileName(_ value: String) -> String {
+        var result = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        result = result.replacingOccurrences(of: "\\", with: "/")
+        result = URL(fileURLWithPath: result).lastPathComponent
+        result = result.removingPercentEncoding ?? result
+        return result.lowercased()
     }
 
     private func sha256(_ data: Data) -> String {
